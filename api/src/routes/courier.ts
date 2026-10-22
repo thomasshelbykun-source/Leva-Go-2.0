@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { all, bad, conflict, forbidden, getSetting, need, notFound, nowIso, one, parseJson, run, uuid, v, type Env, type Vars } from '../lib/core';
+import { all, bad, conflict, files, forbidden, getSetting, need, notFound, nowIso, one, parseJson, run, uuid, v, type Env, type Vars } from '../lib/core';
 import { sha256 } from '../lib/crypto';
 import { ACTIVE_COURIER_STATUSES, courierEarning, fitsBusinessHours, maputoParts, STATUS_LABELS, vehicleCanCarry, type OrderStatus } from '../lib/domain';
 import { auditStmt, earningStmt, guardedBatch, loadHours, notifyStmt, requireRole, transition, type OrderRow } from '../lib/services';
@@ -75,7 +75,7 @@ r.post('/documents', async (c) => {
   if (vehicleId && !(await one(c.env.DB, 'SELECT 1 FROM vehicles WHERE id = ? AND courier_id = ?', vehicleId, u.id))) throw notFound('Veículo não encontrado.');
   const id = uuid();
   const key = `couriers/${u.id}/docs/${id}`;
-  await c.env.FILES.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+  await files(c.env).put(key, file.stream(), { httpMetadata: { contentType: file.type } });
   await run(c.env.DB, 'INSERT INTO courier_documents (id, courier_id, vehicle_id, kind, r2_key, content_type) VALUES (?,?,?,?,?,?)', id, u.id, vehicleId, kind, key, file.type);
   return c.json({ id, kind, status: 'pending' }, 201);
 });
@@ -349,7 +349,7 @@ r.post('/proofs/upload', async (c) => {
   if (!file || typeof file.stream !== 'function' || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw bad('ficheiro', 'Envie uma foto JPG, PNG ou WEBP.');
   if (file.size > MAX_UPLOAD_BYTES) throw bad('ficheiro', 'A foto tem mais de 5 MB.');
   const key = `couriers/${u.id}/proofs/${uuid()}`;
-  await c.env.FILES.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+  await files(c.env).put(key, file.stream(), { httpMetadata: { contentType: file.type } });
   return c.json({ photo_key: key }, 201);
 });
 

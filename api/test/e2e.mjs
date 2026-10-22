@@ -41,10 +41,10 @@ const login = async (phone, app) => (await api('POST', '/auth/login', { body: { 
 
 async function main() {
   console.log('Preparar base de dados local…');
-  wr('d1', 'migrations', 'apply', 'levago', '--local', '--persist-to', dir);
-  wr('d1', 'execute', 'levago', '--local', '--persist-to', dir, '--file', 'seed/staging.sql');
+  wr('d1', 'migrations', 'apply', 'levago', '--env', 'local', '--local', '--persist-to', dir);
+  wr('d1', 'execute', 'levago', '--env', 'local', '--local', '--persist-to', dir, '--file', 'seed/staging.sql');
 
-  const dev = spawn('npx', ['wrangler', 'dev', '--local', '--persist-to', dir, '--port', String(PORT), '--var', 'ENVIRONMENT:test', '--var', 'PAYMENTS_WEBHOOK_SECRET:segredo-teste'], { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+  const dev = spawn('npx', ['wrangler', 'dev', '--env', 'local', '--local', '--persist-to', dir, '--port', String(PORT), '--var', 'ENVIRONMENT:test', '--var', 'PAYMENTS_WEBHOOK_SECRET:segredo-teste'], { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   let log = '';
   dev.stdout.on('data', (d) => (log += d));
   dev.stderr.on('data', (d) => (log += d));
@@ -56,7 +56,7 @@ async function main() {
 
     console.log('Contas e papéis');
     const adm = await register('Ana Admin', '841000001');
-    wr('d1', 'execute', 'levago', '--local', '--persist-to', dir, '--command', `INSERT INTO user_roles (user_id, role) VALUES ('${adm.user.id}','super_admin'),('${adm.user.id}','admin')`);
+    wr('d1', 'execute', 'levago', '--env', 'local', '--local', '--persist-to', dir, '--command', `INSERT INTO user_roles (user_id, role) VALUES ('${adm.user.id}','super_admin'),('${adm.user.id}','admin')`);
     const adminToken = await login('841000001', 'admin');
     ok(!!adminToken, 'super-admin entra no painel');
     const adm2 = await register('Bruno Admin', '841000002');

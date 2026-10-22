@@ -16,14 +16,14 @@ A versão Android (APK) vem depois, com Capacitor, a partir do mesmo site.
 
 ## Publicar no Cloudflare
 
-A publicação é automática com GitHub Actions (`.github/workflows/deploy.yml`) em cada envio para `main`.
+Os testes correm em cada envio para `main`. A publicação pelo GitHub Actions (`.github/workflows/deploy.yml`) só corre quando carrega em Run workflow. Também pode publicar pelo painel do Cloudflare, ligado ao repositório (ver `docs/publicar-manual-cloudflare.md`).
 
 1. No Cloudflare, crie um API Token com estas permissões: Workers Scripts (Edit), D1 (Edit), Workers R2 Storage (Edit), Cloudflare Pages (Edit) e Account Settings (Read).
 2. No GitHub, abra Settings > Secrets and variables > Actions e crie estes segredos:
    - `CLOUDFLARE_API_TOKEN`: o token do passo 1.
    - `CLOUDFLARE_ACCOUNT_ID`: o Account ID (aparece no painel do Cloudflare, à direita).
    - `PAYMENTS_WEBHOOK_SECRET` (opcional): só quando houver um provedor de pagamentos real.
-3. Abra Actions > Testar e publicar > Run workflow, ou envie um commit para `main`.
+3. Abra Actions > Testar e publicar > Run workflow.
 
 O workflow faz isto:
 
@@ -50,9 +50,9 @@ Precisa de Node 22.
 ```bash
 npm install
 cd api
-npx wrangler d1 migrations apply levago --local
-npx wrangler d1 execute levago --local --file seed/staging.sql
-npx wrangler dev --var ENVIRONMENT:test     # API em http://localhost:8787
+npm run db:migrate:local
+npm run db:seed:local
+npm run dev                  # API em http://localhost:8787
 ```
 
 Noutro terminal:

@@ -5,7 +5,7 @@ export type AppName = 'cliente' | 'estafeta' | 'admin';
 
 export interface Env {
   DB: D1Database;
-  FILES: R2Bucket;
+  FILES?: R2Bucket; // opcional até o R2 estar activo na conta
   ENVIRONMENT: string; // dev | test | staging | production
   CORS_ORIGINS: string;
   ROUTING_OSRM_URL?: string;
@@ -119,6 +119,12 @@ export function normalizePhone(raw: string): string | null {
 
 export function maskPhone(phone: string): string {
   return phone.length > 6 ? `${phone.slice(0, 6)}***${phone.slice(-2)}` : '***';
+}
+
+/** Armazenamento de ficheiros. Responde 503 enquanto o R2 não estiver ligado. */
+export function files(env: Env): R2Bucket {
+  if (!env.FILES) throw new ApiError(503, 'armazenamento_desligado', 'O envio de ficheiros ainda não está activo. Tente mais tarde.');
+  return env.FILES;
 }
 
 export function isProd(env: Env) {

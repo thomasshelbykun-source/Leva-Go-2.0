@@ -15,12 +15,35 @@ GEOCODER_URL = "https://nominatim.openstreetmap.org"
 [[d1_databases]]
 binding = "DB"
 database_name = "levago"
-database_id = "00000000-0000-0000-0000-000000000000" # substituído pelo GitHub Actions
+database_id = "aa3ebfe5-2e72-4e71-9615-59e64e696a31"
 migrations_dir = "migrations"
 
-[[r2_buckets]]
-binding = "FILES"
-bucket_name = "levago-files"
+# Armazenamento R2 para documentos e fotos. Ainda não está activo na conta Cloudflare.
+# Depois de activar o R2 e criar o bucket levago-files, tire o # das 3 linhas seguintes.
+# [[r2_buckets]]
+# binding = "FILES"
+# bucket_name = "levago-files"
 
 [triggers]
 crons = ["*/15 * * * *"]
+
+# Ambiente local (wrangler dev e testes): usa D1 e R2 simulados no disco.
+# Uso: npx wrangler dev --env local
+[env.local]
+name = "levago-api-local"
+
+[env.local.vars]
+ENVIRONMENT = "dev"
+CORS_ORIGINS = "http://localhost:5173"
+ROUTING_OSRM_URL = "https://router.project-osrm.org"
+GEOCODER_URL = "https://nominatim.openstreetmap.org"
+
+[[env.local.d1_databases]]
+binding = "DB"
+database_name = "levago"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[env.local.r2_buckets]]
+binding = "FILES"
+bucket_name = "levago-files"

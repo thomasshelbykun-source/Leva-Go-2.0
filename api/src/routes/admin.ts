@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { roadRoute } from '../lib/adapters';
-import { all, bad, conflict, forbidden, getSetting, need, normalizePhone, notFound, nowIso, one, parseJson, run, uuid, v, type AuthUser, type Ctx, type Env, type Vars } from '../lib/core';
+import { all, bad, conflict, files, forbidden, getSetting, need, normalizePhone, notFound, nowIso, one, parseJson, run, uuid, v, type AuthUser, type Ctx, type Env, type Vars } from '../lib/core';
 import { checkRoadDistance, pointInPolygon, priceFor, STATUS_LABELS, vehicleCanCarry, type LonLat, type OrderStatus, type PricingRule } from '../lib/domain';
 import { actorRole, auditStmt, notifyStmt, requireRole, transition, type OrderRow } from '../lib/services';
 
@@ -158,7 +158,7 @@ r.get('/documents/:id/file', async (c) => {
   const u = admin(c);
   const d = await one<{ r2_key: string; content_type: string }>(c.env.DB, 'SELECT r2_key, content_type FROM courier_documents WHERE id = ?', c.req.param('id'));
   if (!d) throw notFound();
-  const obj = await c.env.FILES.get(d.r2_key);
+  const obj = await files(c.env).get(d.r2_key);
   if (!obj) throw notFound('Ficheiro em falta.');
   await c.env.DB.batch([auditStmt(c.env.DB, who(u), 'document.view', 'courier_document', c.req.param('id'))]);
   return new Response(obj.body, { headers: { 'content-type': d.content_type, 'cache-control': 'private, no-store' } });

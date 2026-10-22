@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --local --persist-to .wrangler/state",
-    "db:migrate:local": "wrangler d1 migrations apply levago --local --persist-to .wrangler/state",
-    "db:seed:local": "wrangler d1 execute levago --local --persist-to .wrangler/state --file seed/staging.sql",
+    "dev": "wrangler dev --env local --local --persist-to .wrangler/state",
+    "db:migrate:local": "wrangler d1 migrations apply levago --env local --local --persist-to .wrangler/state",
+    "db:seed:local": "wrangler d1 execute levago --env local --local --persist-to .wrangler/state --file seed/staging.sql",
     "test": "vitest run",
     "test:e2e": "node test/e2e.mjs",
     "typecheck": "tsc --noEmit"
