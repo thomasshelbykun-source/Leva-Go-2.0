@@ -1,3 +1,4 @@
+import type { Db, Stmt } from '../lib/db';
 import { Hono } from 'hono';
 import { all, bad, conflict, files, forbidden, getSetting, need, notFound, nowIso, one, parseJson, run, uuid, v, type Env, type Vars } from '../lib/core';
 import { sha256 } from '../lib/crypto';
@@ -7,9 +8,9 @@ import { auditStmt, earningStmt, guardedBatch, loadHours, notifyStmt, requireRol
 const r = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 const ALLOWED_UPLOADS = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // a Vercel aceita pedidos até 4,5 MB
 
-async function courierState(db: D1Database, userId: string) {
+async function courierState(db: Db, userId: string) {
   const profile = await one<{ status: string; link_type: string; is_online: number; rating_avg: number | null; rating_count: number; zone_id: string | null }>(
     db, 'SELECT * FROM courier_profiles WHERE user_id = ?', userId,
   );
@@ -61,7 +62,7 @@ r.post('/apply', async (c) => {
   return c.json({ application_id: appId, vehicle_id: vehicleId, status: 'pending' }, 201);
 });
 
-/** Upload privado de documentos (R2). Os ficheiros só são lidos por URL autorizado. */
+/** Upload privado de documentos (guardados na base de dados). Os ficheiros só são lidos por URL autorizado. */
 r.post('/documents', async (c) => {
   const u = requireRole(c, 'customer', 'courier');
   const form = await c.req.formData();
@@ -71,11 +72,11 @@ r.post('/documents', async (c) => {
   if (!['bi', 'carta_conducao', 'livrete', 'seguro', 'foto', 'outro'].includes(kind)) throw bad('tipo', 'Tipo de documento inválido.');
   if (!file || typeof file.stream !== 'function') throw bad('ficheiro', 'Escolha um ficheiro.');
   if (!ALLOWED_UPLOADS.includes(file.type)) throw bad('ficheiro', 'Use JPG, PNG, WEBP ou PDF.');
-  if (file.size > MAX_UPLOAD_BYTES) throw bad('ficheiro', 'O ficheiro tem mais de 5 MB.');
+  if (file.size > MAX_UPLOAD_BYTES) throw bad('ficheiro', 'O ficheiro tem mais de 4 MB.');
   if (vehicleId && !(await one(c.env.DB, 'SELECT 1 FROM vehicles WHERE id = ? AND courier_id = ?', vehicleId, u.id))) throw notFound('Veículo não encontrado.');
   const id = uuid();
   const key = `couriers/${u.id}/docs/${id}`;
-  await files(c.env).put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+  await files(c.env).put(key, await file.arrayBuffer(), file.type);
   await run(c.env.DB, 'INSERT INTO courier_documents (id, courier_id, vehicle_id, kind, r2_key, content_type) VALUES (?,?,?,?,?,?)', id, u.id, vehicleId, kind, key, file.type);
   return c.json({ id, kind, status: 'pending' }, 201);
 });
@@ -87,7 +88,7 @@ r.get('/me', async (c) => {
   const today = maputoParts(new Date()).date;
   const earnedToday = await one<{ s: number; n: number }>(
     c.env.DB,
-    "SELECT COALESCE(SUM(amount_cents),0) AS s, COUNT(*) AS n FROM earnings_ledger WHERE courier_id = ? AND kind = 'entrega' AND datetime(created_at, '+2 hours') >= ?",
+    "SELECT COALESCE(SUM(amount_cents),0) AS s, COUNT(*) AS n FROM earnings_ledger WHERE courier_id = ? AND kind = 'entrega' AND to_char(created_at::timestamptz AT TIME ZONE 'Africa/Maputo', 'YYYY-MM-DD HH24:MI:SS') >= ?",
     u.id,
     `${today} 00:00:00`,
   );
@@ -244,7 +245,7 @@ r.post('/orders/:id/decline', async (c) => {
   return c.json({ ok: true });
 });
 
-async function myOrder(db: D1Database, id: string, courierId: string) {
+async function myOrder(db: Db, id: string, courierId: string) {
   const o = await one<OrderRow & { delivery_code_hash: string; delivery_code_attempts: number }>(db, 'SELECT * FROM orders WHERE id = ? AND assigned_courier_id = ?', id, courierId);
   if (!o) throw notFound();
   return o;
@@ -300,7 +301,7 @@ r.post('/orders/:id/deliver', async (c) => {
   }
   if (b.photo_key && !b.photo_key.startsWith(`couriers/${u.id}/proofs/`)) throw forbidden();
   if (o.payment_status === 'collect_on_delivery' && !b.cash_collected) throw bad('cobranca', 'Confirme que recebeu o pagamento do cliente.');
-  const extra: D1PreparedStatement[] = [
+  const extra: Stmt[] = [
     c.env.DB.prepare("INSERT INTO delivery_proofs (id, order_id, kind, method, checklist, photo_r2_key, lat, lon, created_by) VALUES (?,?, 'delivery', ?, ?, ?, ?, ?, ?)").bind(
       uuid(), o.id, b.photo_key ? 'codigo+foto' : 'codigo', JSON.stringify(b.checklist), b.photo_key ?? null, b.lat ?? null, b.lon ?? null, u.id,
     ),
@@ -347,9 +348,9 @@ r.post('/proofs/upload', async (c) => {
   const form = await c.req.formData();
   const file = form.get('file') as unknown as File | null;
   if (!file || typeof file.stream !== 'function' || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw bad('ficheiro', 'Envie uma foto JPG, PNG ou WEBP.');
-  if (file.size > MAX_UPLOAD_BYTES) throw bad('ficheiro', 'A foto tem mais de 5 MB.');
+  if (file.size > MAX_UPLOAD_BYTES) throw bad('ficheiro', 'A foto tem mais de 4 MB.');
   const key = `couriers/${u.id}/proofs/${uuid()}`;
-  await files(c.env).put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+  await files(c.env).put(key, await file.arrayBuffer(), file.type);
   return c.json({ photo_key: key }, 201);
 });
 

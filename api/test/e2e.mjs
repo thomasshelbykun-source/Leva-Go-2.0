@@ -1,16 +1,17 @@
 // Teste ponta a ponta (especificação, secção 12): registo Cliente → cotação → pagamento sandbox →
 // aprovação de estafeta pelo Admin → aceite atómico → recolha → entrega com código → recibo e histórico.
-// Corre a API real (wrangler dev) com uma base D1 local nova. Uso: npm run test:e2e
+// Corre a API real com uma base Postgres nova e temporária.
+// Uso: TEST_DATABASE_URL=postgres://postgres@localhost:5432/postgres npm run test:e2e
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { createHmac } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
+import pg from 'pg';
 
 const PORT = 8799;
 const BASE = `http://127.0.0.1:${PORT}/v1`;
-const dir = mkdtempSync(join(tmpdir(), 'levago-e2e-'));
-const wr = (...args) => execFileSync('npx', ['wrangler', ...args], { stdio: 'pipe', encoding: 'utf8' });
+const ADMIN_URL = process.env.TEST_DATABASE_URL ?? 'postgres://postgres@localhost:5432/postgres';
+const DB_NAME = `levago_e2e_${randomBytes(4).toString('hex')}`;
+const dbUrl = (() => { const u = new URL(ADMIN_URL); u.pathname = `/${DB_NAME}`; return u.toString(); })();
+const adminSql = async (url, sql) => { const c = new pg.Client({ connectionString: url }); c.on('error', () => {}); await c.connect(); try { return await c.query(sql); } finally { await c.end(); } };
 
 let failures = 0;
 const ok = (cond, msg) => {
@@ -41,10 +42,14 @@ const login = async (phone, app) => (await api('POST', '/auth/login', { body: { 
 
 async function main() {
   console.log('Preparar base de dados local…');
-  wr('d1', 'migrations', 'apply', 'levago', '--env', 'local', '--local', '--persist-to', dir);
-  wr('d1', 'execute', 'levago', '--env', 'local', '--local', '--persist-to', dir, '--file', 'seed/staging.sql');
+  await adminSql(ADMIN_URL, `CREATE DATABASE ${DB_NAME}`);
+  execFileSync('npx', ['tsx', 'scripts/migrate.ts', '--seed'], { stdio: 'pipe', env: { ...process.env, DATABASE_URL: dbUrl } });
 
-  const dev = spawn('npx', ['wrangler', 'dev', '--env', 'local', '--local', '--persist-to', dir, '--port', String(PORT), '--var', 'ENVIRONMENT:test', '--var', 'PAYMENTS_WEBHOOK_SECRET:segredo-teste'], { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+  const dev = spawn('npx', ['tsx', 'scripts/dev.ts'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
+    env: { ...process.env, DATABASE_URL: dbUrl, PORT: String(PORT), ENVIRONMENT: 'test', PAYMENTS_WEBHOOK_SECRET: 'segredo-teste', CORS_ORIGINS: 'http://localhost:5173' },
+  });
   let log = '';
   dev.stdout.on('data', (d) => (log += d));
   dev.stderr.on('data', (d) => (log += d));
@@ -56,7 +61,7 @@ async function main() {
 
     console.log('Contas e papéis');
     const adm = await register('Ana Admin', '841000001');
-    wr('d1', 'execute', 'levago', '--env', 'local', '--local', '--persist-to', dir, '--command', `INSERT INTO user_roles (user_id, role) VALUES ('${adm.user.id}','super_admin'),('${adm.user.id}','admin')`);
+    await adminSql(dbUrl, `INSERT INTO user_roles (user_id, role) VALUES ('${adm.user.id}','super_admin'),('${adm.user.id}','admin')`);
     const adminToken = await login('841000001', 'admin');
     ok(!!adminToken, 'super-admin entra no painel');
     const adm2 = await register('Bruno Admin', '841000002');
@@ -209,9 +214,8 @@ async function main() {
     console.error(log.slice(-3000));
   } finally {
     try { process.kill(-dev.pid, 'SIGTERM'); } catch {}
-    // O workerd pode ficar órfão; termina-o pela porta usada.
-    try { execFileSync('pkill', ['-f', `socket-addr=entry=localhost:${PORT}`]); } catch {}
-    rmSync(dir, { recursive: true, force: true });
+    await new Promise((r) => setTimeout(r, 500));
+    await adminSql(ADMIN_URL, `DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`).catch(() => {});
   }
   console.log(failures ? `\n${failures} verificação(ões) falharam.` : '\nTodas as verificações passaram.');
   process.exit(failures ? 1 : 0);

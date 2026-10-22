@@ -1,3 +1,4 @@
+import type { Db } from '../lib/db';
 import { Hono } from 'hono';
 import { ApiError, bad, forbidden, isProd, need, notFound, nowIso, one, parseJson, uuid, v, type Env, type Vars } from '../lib/core';
 import { hmacSha256, timingSafeEqual } from '../lib/crypto';
@@ -17,7 +18,7 @@ export interface ProviderEvent {
  * Aplica um evento do provedor. Idempotente: o mesmo event_id só tem efeito uma vez,
  * e eventos fora de ordem (falha depois de sucesso) não desfazem um pagamento confirmado.
  */
-export async function applyPaymentEvent(db: D1Database, ev: ProviderEvent, raw: string) {
+export async function applyPaymentEvent(db: Db, ev: ProviderEvent, raw: string) {
   const pi = await one<{ id: string; status: string; amount_cents: number; order_id: string | null; subscription_id: string | null; customer_id: string }>(
     db, 'SELECT * FROM payment_intents WHERE id = ?', ev.intent_id,
   );
@@ -26,7 +27,7 @@ export async function applyPaymentEvent(db: D1Database, ev: ProviderEvent, raw: 
 
   const recorded = await guardedBatch(
     db,
-    db.prepare("INSERT OR IGNORE INTO payment_transactions (id, intent_id, provider_event_id, kind, status, amount_cents, raw) VALUES (?,?,?, 'charge', ?, ?, ?)").bind(
+    db.prepare("INSERT INTO payment_transactions (id, intent_id, provider_event_id, kind, status, amount_cents, raw) VALUES (?,?,?, 'charge', ?, ?, ?) ON CONFLICT DO NOTHING").bind(
       uuid(), pi.id, ev.event_id, ev.status, ev.amount_cents, raw.slice(0, 4000),
     ),
     [],
@@ -63,7 +64,7 @@ export async function applyPaymentEvent(db: D1Database, ev: ProviderEvent, raw: 
     await db.batch([
       setPaid,
       db.prepare("UPDATE subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE id = ? AND status = 'pending_payment'").bind(now, end, pi.subscription_id),
-      db.prepare('INSERT OR IGNORE INTO subscription_entitlements (id, subscription_id, period_start, period_end, deliveries_total) VALUES (?,?,?,?,?)').bind(uuid(), pi.subscription_id, now, end, plan.deliveries_included),
+      db.prepare('INSERT INTO subscription_entitlements (id, subscription_id, period_start, period_end, deliveries_total) VALUES (?,?,?,?,?) ON CONFLICT DO NOTHING').bind(uuid(), pi.subscription_id, now, end, plan.deliveries_included),
       db.prepare("INSERT INTO invoices (id, customer_id, subscription_id, amount_cents, status) VALUES (?,?,?,?, 'paid')").bind(uuid(), pi.customer_id, pi.subscription_id, pi.amount_cents),
       notifyStmt(db, pi.customer_id, `sub:${pi.subscription_id}:active`, 'subscricao', 'Subscrição activa', `O plano ${plan.name} está activo.`),
     ]);

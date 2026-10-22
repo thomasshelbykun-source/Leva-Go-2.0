@@ -1,11 +1,13 @@
--- LevaGo 2.0: esquema inicial (Cloudflare D1 / SQLite)
+-- LevaGo 2.0: esquema inicial (Neon / PostgreSQL)
 -- Regras gerais:
 --   * Chaves primárias UUID em texto.
 --   * Datas em UTC, formato ISO 8601 (o ecrã converte para Africa/Maputo).
 --   * Valores em dinheiro em centavos de metical (MZN), inteiros.
 --   * Estados finais de encomendas são imutáveis (ver triggers no fim).
 
-PRAGMA foreign_keys = ON;
+-- Data actual em ISO 8601 UTC com milissegundos, igual ao formato que a API grava.
+CREATE OR REPLACE FUNCTION now_iso() RETURNS TEXT LANGUAGE sql STABLE AS
+$$ SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') $$;
 
 -- ---------------------------------------------------------------- Identidade
 CREATE TABLE users (
@@ -23,15 +25,15 @@ CREATE TABLE users (
   locale          TEXT NOT NULL DEFAULT 'pt-MZ',
   theme           TEXT NOT NULL DEFAULT 'system',
   notify_prefs    TEXT NOT NULL DEFAULT '{"orders":true,"promos":false}',
-  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at      TEXT NOT NULL DEFAULT now_iso(),
+  updated_at      TEXT NOT NULL DEFAULT now_iso()
 );
 
 CREATE TABLE user_roles (
   user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   role       TEXT NOT NULL CHECK (role IN ('customer','courier','admin','super_admin')),
   granted_by TEXT REFERENCES users(id),
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  created_at TEXT NOT NULL DEFAULT now_iso(),
   PRIMARY KEY (user_id, role)
 );
 
@@ -42,7 +44,7 @@ CREATE TABLE sessions (
   app         TEXT NOT NULL CHECK (app IN ('cliente','estafeta','admin')),
   expires_at  TEXT NOT NULL,
   revoked_at  TEXT,
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at  TEXT NOT NULL DEFAULT now_iso()
 );
 CREATE INDEX idx_sessions_user ON sessions(user_id);
 
@@ -55,15 +57,15 @@ CREATE TABLE phone_verifications (
   expires_at  TEXT NOT NULL,
   used_at     TEXT,
   payload     TEXT,                            -- dados do registo pendente (JSON)
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at  TEXT NOT NULL DEFAULT now_iso()
 );
 CREATE INDEX idx_phone_verif_phone ON phone_verifications(phone, created_at);
 
 CREATE TABLE rate_limits (
   key         TEXT NOT NULL,
-  window      TEXT NOT NULL,
+  bucket      TEXT NOT NULL,
   hits        INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (key, window)
+  PRIMARY KEY (key, bucket)
 );
 
 CREATE TABLE customer_addresses (
@@ -71,9 +73,9 @@ CREATE TABLE customer_addresses (
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   label       TEXT NOT NULL,
   description TEXT NOT NULL,
-  lat         REAL NOT NULL,
-  lon         REAL NOT NULL,
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  lat         DOUBLE PRECISION NOT NULL,
+  lon         DOUBLE PRECISION NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT now_iso()
 );
 CREATE INDEX idx_addresses_user ON customer_addresses(user_id);
 
@@ -82,10 +84,22 @@ CREATE TABLE account_deletion_requests (
   user_id     TEXT NOT NULL REFERENCES users(id),
   reason      TEXT,
   status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','done','rejected')),
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at  TEXT NOT NULL DEFAULT now_iso()
 );
 
 -- ---------------------------------------------------------------- Estafetas
+CREATE TABLE service_zones (
+  id          TEXT PRIMARY KEY,
+  city        TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  kind        TEXT NOT NULL DEFAULT 'coverage' CHECK (kind IN ('coverage','restricted')),
+  polygon     TEXT NOT NULL,                   -- GeoJSON: [[lon,lat],...]
+  version     INTEGER NOT NULL DEFAULT 1,
+  active      INTEGER NOT NULL DEFAULT 1,
+  updated_by  TEXT REFERENCES users(id),
+  updated_at  TEXT NOT NULL DEFAULT now_iso()
+);
+
 CREATE TABLE courier_applications (
   id            TEXT PRIMARY KEY,
   user_id       TEXT NOT NULL REFERENCES users(id),
@@ -94,7 +108,7 @@ CREATE TABLE courier_applications (
   reviewer_id   TEXT REFERENCES users(id),
   review_note   TEXT,
   reviewed_at   TEXT,
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at    TEXT NOT NULL DEFAULT now_iso()
 );
 CREATE INDEX idx_courier_app_status ON courier_applications(status, created_at);
 
@@ -104,10 +118,10 @@ CREATE TABLE courier_profiles (
   status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','active','suspended')),
   is_online     INTEGER NOT NULL DEFAULT 0,
   zone_id       TEXT REFERENCES service_zones(id),
-  rating_avg    REAL,
+  rating_avg    DOUBLE PRECISION,
   rating_count  INTEGER NOT NULL DEFAULT 0,
   approved_at   TEXT,
-  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  updated_at    TEXT NOT NULL DEFAULT now_iso()
 );
 
 CREATE TABLE vehicles (
@@ -116,11 +130,11 @@ CREATE TABLE vehicles (
   kind           TEXT NOT NULL CHECK (kind IN ('bicicleta','motorizada')),
   plate          TEXT,
   ownership      TEXT NOT NULL CHECK (ownership IN ('empresa','particular')),
-  capacity_kg    REAL NOT NULL CHECK (capacity_kg > 0 AND capacity_kg <= 15),
+  capacity_kg    DOUBLE PRECISION NOT NULL CHECK (capacity_kg > 0 AND capacity_kg <= 15),
   status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
   review_note    TEXT,
-  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at     TEXT NOT NULL DEFAULT now_iso(),
+  updated_at     TEXT NOT NULL DEFAULT now_iso()
 );
 CREATE INDEX idx_vehicles_courier ON vehicles(courier_id);
 
@@ -132,22 +146,10 @@ CREATE TABLE courier_documents (
   r2_key       TEXT NOT NULL,
   content_type TEXT NOT NULL,
   status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
-  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at   TEXT NOT NULL DEFAULT now_iso()
 );
 
 -- ---------------------------------------------------------------- Operação e tarifas
-CREATE TABLE service_zones (
-  id          TEXT PRIMARY KEY,
-  city        TEXT NOT NULL,
-  name        TEXT NOT NULL,
-  kind        TEXT NOT NULL DEFAULT 'coverage' CHECK (kind IN ('coverage','restricted')),
-  polygon     TEXT NOT NULL,                   -- GeoJSON: [[lon,lat],...]
-  version     INTEGER NOT NULL DEFAULT 1,
-  active      INTEGER NOT NULL DEFAULT 1,
-  updated_by  TEXT REFERENCES users(id),
-  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-);
-
 CREATE TABLE business_hours (
   weekday     INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),   -- 0 = domingo
   opens_at    TEXT NOT NULL,                                       -- HH:MM, hora de Maputo
@@ -163,7 +165,7 @@ CREATE TABLE pricing_versions (
   created_by    TEXT REFERENCES users(id),
   published_by  TEXT REFERENCES users(id),
   published_at  TEXT,
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at    TEXT NOT NULL DEFAULT now_iso()
 );
 
 CREATE TABLE pricing_rules (
@@ -179,9 +181,9 @@ CREATE TABLE pricing_rules (
 CREATE TABLE quotes (
   id                  TEXT PRIMARY KEY,
   customer_id         TEXT NOT NULL REFERENCES users(id),
-  pickup_lat REAL NOT NULL, pickup_lon REAL NOT NULL, pickup_text TEXT NOT NULL,
-  dropoff_lat REAL NOT NULL, dropoff_lon REAL NOT NULL, dropoff_text TEXT NOT NULL,
-  weight_kg           REAL NOT NULL,
+  pickup_lat DOUBLE PRECISION NOT NULL, pickup_lon DOUBLE PRECISION NOT NULL, pickup_text TEXT NOT NULL,
+  dropoff_lat DOUBLE PRECISION NOT NULL, dropoff_lon DOUBLE PRECISION NOT NULL, dropoff_text TEXT NOT NULL,
+  weight_kg           DOUBLE PRECISION NOT NULL,
   service_type        TEXT NOT NULL,
   road_distance_m     INTEGER NOT NULL,
   estimated_duration_s INTEGER NOT NULL,
@@ -193,7 +195,7 @@ CREATE TABLE quotes (
   scheduled_at        TEXT,
   expires_at          TEXT NOT NULL,
   used_at             TEXT,
-  created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at          TEXT NOT NULL DEFAULT now_iso()
 );
 CREATE INDEX idx_quotes_customer ON quotes(customer_id, created_at);
 
@@ -205,11 +207,11 @@ CREATE TABLE subscription_plans (
   price_cents          INTEGER NOT NULL CHECK (price_cents >= 0),
   period_days          INTEGER NOT NULL DEFAULT 30,
   deliveries_included  INTEGER NOT NULL CHECK (deliveries_included >= 0),
-  max_weight_kg        REAL NOT NULL DEFAULT 15,
+  max_weight_kg        DOUBLE PRECISION NOT NULL DEFAULT 15,
   service_types        TEXT NOT NULL DEFAULT '["normal"]',
   status               TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','archived')),
-  created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at           TEXT NOT NULL DEFAULT now_iso(),
+  updated_at           TEXT NOT NULL DEFAULT now_iso()
 );
 
 CREATE TABLE subscriptions (
@@ -223,7 +225,7 @@ CREATE TABLE subscriptions (
   current_period_start TEXT,
   current_period_end   TEXT,
   cancelled_at    TEXT,
-  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at      TEXT NOT NULL DEFAULT now_iso()
 );
 CREATE INDEX idx_subs_customer ON subscriptions(customer_id, status);
 
@@ -240,7 +242,7 @@ CREATE TABLE subscription_entitlements (
 CREATE TABLE entitlement_usages (
   order_id         TEXT PRIMARY KEY,           -- uma encomenda consome no máximo 1 benefício
   entitlement_id   TEXT NOT NULL REFERENCES subscription_entitlements(id),
-  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at       TEXT NOT NULL DEFAULT now_iso()
 );
 
 CREATE TABLE invoices (
@@ -250,7 +252,7 @@ CREATE TABLE invoices (
   order_id         TEXT,
   amount_cents     INTEGER NOT NULL,
   status           TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','paid','void')),
-  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at       TEXT NOT NULL DEFAULT now_iso()
 );
 
 -- ---------------------------------------------------------------- Encomendas
@@ -267,7 +269,7 @@ CREATE TABLE orders (
   category              TEXT NOT NULL,
   description           TEXT NOT NULL,
   notes                 TEXT,
-  weight_kg             REAL NOT NULL CHECK (weight_kg > 0 AND weight_kg <= 15),
+  weight_kg             DOUBLE PRECISION NOT NULL CHECK (weight_kg > 0 AND weight_kg <= 15),
   service_type          TEXT NOT NULL CHECK (service_type IN ('normal','expressa')),
   road_distance_m       INTEGER NOT NULL CHECK (road_distance_m <= 15000),
   price_cents           INTEGER NOT NULL,
@@ -283,8 +285,8 @@ CREATE TABLE orders (
   delivery_code_hash    TEXT NOT NULL,          -- código único gerado no servidor
   delivery_code_attempts INTEGER NOT NULL DEFAULT 0,
   cancel_reason         TEXT,
-  created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  created_at            TEXT NOT NULL DEFAULT now_iso(),
+  updated_at            TEXT NOT NULL DEFAULT now_iso(),
   UNIQUE (customer_id, idempotency_key)
 );
 CREATE INDEX idx_orders_customer ON orders(customer_id, created_at);
@@ -300,7 +302,7 @@ CREATE TABLE order_events (
   actor_id    TEXT REFERENCES users(id),
   actor_role  TEXT NOT NULL,
   note        TEXT,
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at  TEXT NOT NULL DEFAULT now_iso()
 );
 CREATE INDEX idx_order_events_order ON order_events(order_id, created_at);
 
@@ -311,7 +313,7 @@ CREATE TABLE assignments (
   assigned_by TEXT REFERENCES users(id),           -- NULL = aceite directo pelo estafeta
   status      TEXT NOT NULL CHECK (status IN ('offered','accepted','declined','revoked','completed')),
   reason      TEXT,
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  created_at  TEXT NOT NULL DEFAULT now_iso(),
   responded_at TEXT
 );
 CREATE INDEX idx_assign_order ON assignments(order_id);
@@ -320,10 +322,10 @@ CREATE INDEX idx_assign_courier ON assignments(courier_id, status);
 CREATE TABLE location_updates (
   courier_id  TEXT PRIMARY KEY REFERENCES users(id),  -- só a última posição
   order_id    TEXT REFERENCES orders(id),
-  lat         REAL NOT NULL,
-  lon         REAL NOT NULL,
-  accuracy_m  REAL,
-  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  lat         DOUBLE PRECISION NOT NULL,
+  lon         DOUBLE PRECISION NOT NULL,
+  accuracy_m  DOUBLE PRECISION,
+  updated_at  TEXT NOT NULL DEFAULT now_iso()
 );
 
 CREATE TABLE delivery_proofs (
@@ -333,9 +335,9 @@ CREATE TABLE delivery_proofs (
   method      TEXT NOT NULL,                    -- codigo, foto, checklist
   checklist   TEXT,
   photo_r2_key TEXT,
-  lat REAL, lon REAL,
+  lat DOUBLE PRECISION, lon DOUBLE PRECISION,
   created_by  TEXT NOT NULL REFERENCES users(id),
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  created_at  TEXT NOT NULL DEFAULT now_iso(),
   UNIQUE (order_id, kind)
 );
 
@@ -346,7 +348,7 @@ CREATE TABLE incident_reports (
   kind        TEXT NOT NULL,
   description TEXT NOT NULL,
   status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')),
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at  TEXT NOT NULL DEFAULT now_iso()
 );
 
 CREATE TABLE ratings (
@@ -354,7 +356,7 @@ CREATE TABLE ratings (
   courier_id    TEXT REFERENCES users(id),
   stars         INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
   comment       TEXT,
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at    TEXT NOT NULL DEFAULT now_iso()
 );
 
 -- ---------------------------------------------------------------- Pagamentos
@@ -370,8 +372,8 @@ CREATE TABLE payment_intents (
   provider_ref     TEXT UNIQUE,
   idempotency_key  TEXT NOT NULL UNIQUE,
   failure_reason   TEXT,
-  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at       TEXT NOT NULL DEFAULT now_iso(),
+  updated_at       TEXT NOT NULL DEFAULT now_iso()
 );
 CREATE INDEX idx_pi_order ON payment_intents(order_id);
 CREATE INDEX idx_pi_status ON payment_intents(status, created_at);
@@ -384,7 +386,7 @@ CREATE TABLE payment_transactions (
   status           TEXT NOT NULL,
   amount_cents     INTEGER NOT NULL,
   raw              TEXT,
-  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at       TEXT NOT NULL DEFAULT now_iso()
 );
 
 CREATE TABLE refunds (
@@ -395,7 +397,18 @@ CREATE TABLE refunds (
   requested_by  TEXT NOT NULL REFERENCES users(id),
   approved_by   TEXT REFERENCES users(id),
   status        TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested','approved','rejected','done')),
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at    TEXT NOT NULL DEFAULT now_iso()
+);
+
+CREATE TABLE payouts (
+  id            TEXT PRIMARY KEY,
+  courier_id    TEXT NOT NULL REFERENCES users(id),
+  amount_cents  INTEGER NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid')),
+  reference     TEXT,
+  created_by    TEXT REFERENCES users(id),
+  created_at    TEXT NOT NULL DEFAULT now_iso(),
+  paid_at       TEXT
 );
 
 CREATE TABLE earnings_ledger (
@@ -406,21 +419,10 @@ CREATE TABLE earnings_ledger (
   amount_cents INTEGER NOT NULL,
   note         TEXT,
   payout_id    TEXT REFERENCES payouts(id),
-  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  created_at   TEXT NOT NULL DEFAULT now_iso(),
   UNIQUE (courier_id, order_id, kind)
 );
 CREATE INDEX idx_ledger_courier ON earnings_ledger(courier_id, created_at);
-
-CREATE TABLE payouts (
-  id            TEXT PRIMARY KEY,
-  courier_id    TEXT NOT NULL REFERENCES users(id),
-  amount_cents  INTEGER NOT NULL,
-  status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid')),
-  reference     TEXT,
-  created_by    TEXT REFERENCES users(id),
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  paid_at       TEXT
-);
 
 CREATE TABLE earning_disputes (
   id          TEXT PRIMARY KEY,
@@ -428,7 +430,7 @@ CREATE TABLE earning_disputes (
   courier_id  TEXT NOT NULL REFERENCES users(id),
   message     TEXT NOT NULL,
   status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')),
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at  TEXT NOT NULL DEFAULT now_iso()
 );
 
 -- ---------------------------------------------------------------- Comunicação e suporte
@@ -441,7 +443,7 @@ CREATE TABLE notifications (
   body        TEXT NOT NULL,
   order_id    TEXT,
   read_at     TEXT,
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  created_at  TEXT NOT NULL DEFAULT now_iso(),
   UNIQUE (user_id, event_id)
 );
 CREATE INDEX idx_notif_user ON notifications(user_id, created_at);
@@ -456,8 +458,8 @@ CREATE TABLE support_tickets (
   status      TEXT NOT NULL DEFAULT 'aberto' CHECK (status IN ('aberto','em_curso','resolvido','fechado')),
   assignee_id TEXT REFERENCES users(id),
   sla_due_at  TEXT,
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at  TEXT NOT NULL DEFAULT now_iso(),
+  updated_at  TEXT NOT NULL DEFAULT now_iso()
 );
 CREATE INDEX idx_tickets_opener ON support_tickets(opened_by);
 CREATE INDEX idx_tickets_status ON support_tickets(status, priority);
@@ -468,7 +470,7 @@ CREATE TABLE ticket_messages (
   author_id   TEXT NOT NULL REFERENCES users(id),
   body        TEXT NOT NULL,
   internal    INTEGER NOT NULL DEFAULT 0,
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at  TEXT NOT NULL DEFAULT now_iso()
 );
 
 -- ---------------------------------------------------------------- Administração
@@ -477,7 +479,7 @@ CREATE TABLE system_settings (
   value       TEXT NOT NULL,                    -- JSON
   version     INTEGER NOT NULL DEFAULT 1,
   updated_by  TEXT REFERENCES users(id),
-  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  updated_at  TEXT NOT NULL DEFAULT now_iso()
 );
 
 CREATE TABLE audit_logs (
@@ -490,35 +492,40 @@ CREATE TABLE audit_logs (
   reason      TEXT,
   before_json TEXT,
   after_json  TEXT,
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at  TEXT NOT NULL DEFAULT now_iso()
 );
 CREATE INDEX idx_audit_entity ON audit_logs(entity, entity_id);
 CREATE INDEX idx_audit_created ON audit_logs(created_at);
 
--- Guarda de transacção: o lote D1 inteiro é desfeito se a primeira escrita não mudar exactamente 1 linha.
--- Uso: [UPDATE ..., INSERT INTO tx_guard VALUES (changes()), DELETE FROM tx_guard, ...resto].
-CREATE TABLE tx_guard (ok INTEGER NOT NULL CHECK (ok = 1));
+-- Ficheiros privados (documentos e fotos dos estafetas). Pequenos (até 4 MB), guardados na própria base.
+CREATE TABLE file_blobs (
+  key          TEXT PRIMARY KEY,
+  content_type TEXT NOT NULL,
+  size_bytes   INTEGER NOT NULL,
+  data         BYTEA NOT NULL,
+  created_at   TEXT NOT NULL DEFAULT now_iso()
+);
 
 -- ---------------------------------------------------------------- Invariantes
 -- Estados finais não mudam.
-CREATE TRIGGER orders_final_state_immutable
-BEFORE UPDATE OF status ON orders
-WHEN OLD.status IN ('ENTREGUE','CANCELADO','DEVOLVIDO') AND NEW.status <> OLD.status
+CREATE FUNCTION orders_final_state_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  SELECT RAISE(ABORT, 'estado_final_imutavel');
-END;
+  IF OLD.status IN ('ENTREGUE','CANCELADO','DEVOLVIDO') AND NEW.status <> OLD.status THEN
+    RAISE EXCEPTION 'estado_final_imutavel';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER orders_final_state_immutable BEFORE UPDATE OF status ON orders
+FOR EACH ROW EXECUTE FUNCTION orders_final_state_immutable();
 
--- O histórico de eventos e de mensagens de suporte não se edita nem se apaga.
-CREATE TRIGGER order_events_no_update BEFORE UPDATE ON order_events
-BEGIN SELECT RAISE(ABORT, 'historico_imutavel'); END;
-CREATE TRIGGER order_events_no_delete BEFORE DELETE ON order_events
-BEGIN SELECT RAISE(ABORT, 'historico_imutavel'); END;
-CREATE TRIGGER ticket_messages_no_update BEFORE UPDATE ON ticket_messages
-BEGIN SELECT RAISE(ABORT, 'historico_imutavel'); END;
-CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit_logs
-BEGIN SELECT RAISE(ABORT, 'historico_imutavel'); END;
-CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit_logs
-BEGIN SELECT RAISE(ABORT, 'historico_imutavel'); END;
+-- O histórico de eventos, de mensagens de suporte e da auditoria não se edita nem se apaga.
+CREATE FUNCTION history_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'historico_imutavel';
+END $$;
+CREATE TRIGGER order_events_no_change BEFORE UPDATE OR DELETE ON order_events FOR EACH ROW EXECUTE FUNCTION history_immutable();
+CREATE TRIGGER ticket_messages_no_update BEFORE UPDATE ON ticket_messages FOR EACH ROW EXECUTE FUNCTION history_immutable();
+CREATE TRIGGER audit_no_change BEFORE UPDATE OR DELETE ON audit_logs FOR EACH ROW EXECUTE FUNCTION history_immutable();
 
 -- ---------------------------------------------------------------- Dados aprovados pela especificação
 -- Horário operacional (Africa/Maputo). 0 = domingo ... 6 = sábado.

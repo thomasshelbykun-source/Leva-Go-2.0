@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "hono",
+  "regions": ["fra1"],
+  "crons": [{ "path": "/v1/internal/housekeeping", "schedule": "0 4 * * *" }]
+}

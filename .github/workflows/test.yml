@@ -1,0 +1,38 @@
+# Testa o LevaGo 2.0 em cada envio. A publicação é feita pela Vercel, ligada ao repositório.
+name: Testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: API, testes unitários e tipos
+        working-directory: api
+        run: npx tsc --noEmit && npx vitest run
+      - name: API, fluxo completo com Postgres
+        working-directory: api
+        run: npm run test:e2e
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      - name: Site, compilação
+        run: npm run build -w web

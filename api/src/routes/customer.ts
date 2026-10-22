@@ -1,3 +1,4 @@
+import type { Db, Stmt } from '../lib/db';
 import { Hono } from 'hono';
 import { reversePlace, roadRoute, searchPlaces, startCharge } from '../lib/adapters';
 import {
@@ -219,7 +220,7 @@ r.post('/orders', async (c) => {
   const pay = await getSetting(c.env.DB, 'payments', { mpesa_enabled: false, emola_enabled: false, sandbox_enabled: true, pay_on_delivery_enabled: false, pay_on_delivery_max_cents: 0 });
   let status: OrderStatus;
   let paymentStatus: string;
-  const extra: D1PreparedStatement[] = [];
+  const extra: Stmt[] = [];
   const orderId = uuid();
 
   if (q.total_cents === 0) {
@@ -301,7 +302,7 @@ r.post('/orders/:id/cancel', async (c) => {
   const o = await one<OrderRow>(c.env.DB, 'SELECT * FROM orders WHERE id = ? AND customer_id = ?', c.req.param('id'), u.id);
   if (!o) throw notFound();
   if (!customerCanCancel(o.status)) throw conflict('cancelamento_indisponivel', 'O pedido já não pode ser cancelado pela app. Fale com o apoio.');
-  const extra: D1PreparedStatement[] = [];
+  const extra: Stmt[] = [];
   // Benefício da subscrição volta a estar disponível.
   extra.push(
     c.env.DB.prepare('UPDATE subscription_entitlements SET deliveries_used = deliveries_used - 1 WHERE id = (SELECT entitlement_id FROM entitlement_usages WHERE order_id = ?) AND deliveries_used > 0').bind(o.id),
@@ -324,7 +325,7 @@ r.post('/orders/:id/rating', async (c) => {
   const o = await one<OrderRow>(c.env.DB, "SELECT * FROM orders WHERE id = ? AND customer_id = ? AND status = 'ENTREGUE'", c.req.param('id'), u.id);
   if (!o) throw bad('avaliacao', 'Só pode avaliar encomendas entregues.');
   await c.env.DB.batch([
-    c.env.DB.prepare('INSERT OR IGNORE INTO ratings (order_id, courier_id, stars, comment) VALUES (?,?,?,?)').bind(o.id, o.assigned_courier_id, b.stars, b.comment ?? null),
+    c.env.DB.prepare('INSERT INTO ratings (order_id, courier_id, stars, comment) VALUES (?,?,?,?) ON CONFLICT DO NOTHING').bind(o.id, o.assigned_courier_id, b.stars, b.comment ?? null),
     c.env.DB.prepare(
       `UPDATE courier_profiles SET rating_count = (SELECT COUNT(*) FROM ratings WHERE courier_id = ?), rating_avg = (SELECT AVG(stars) FROM ratings WHERE courier_id = ?) WHERE user_id = ?`,
     ).bind(o.assigned_courier_id, o.assigned_courier_id, o.assigned_courier_id),
@@ -352,7 +353,7 @@ r.get('/orders/:id/receipt', async (c) => {
   });
 });
 
-async function orderDetail(db: D1Database, id: string, customerId: string): Promise<Record<string, any>> {
+async function orderDetail(db: Db, id: string, customerId: string): Promise<Record<string, any>> {
   const o = await one<Record<string, any> & { status: OrderStatus; assigned_courier_id: string | null; quote_id: string }>(
     db,
     `SELECT id, code, status, customer_id, quote_id, pickup_snapshot, dropoff_snapshot, recipient_name, recipient_phone, category, description, notes,
@@ -450,7 +451,7 @@ r.get('/payments/intents/:id', async (c) => {
 });
 
 // ------------------------------------------------------------------ Subscrições
-async function activeSubscription(db: D1Database, customerId: string) {
+async function activeSubscription(db: Db, customerId: string) {
   const s = await one<{ id: string; plan_snapshot: string; current_period_end: string; auto_renew: number; entitlement_id: string; total: number; used: number }>(
     db,
     `SELECT s.id, s.plan_snapshot, s.current_period_end, s.auto_renew, e.id AS entitlement_id, e.deliveries_total AS total, e.deliveries_used AS used

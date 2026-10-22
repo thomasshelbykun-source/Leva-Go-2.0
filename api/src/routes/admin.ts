@@ -1,3 +1,4 @@
+import type { Stmt } from '../lib/db';
 import { Hono } from 'hono';
 import { roadRoute } from '../lib/adapters';
 import { all, bad, conflict, files, forbidden, getSetting, need, normalizePhone, notFound, nowIso, one, parseJson, run, uuid, v, type AuthUser, type Ctx, type Env, type Vars } from '../lib/core';
@@ -35,7 +36,7 @@ r.get('/dashboard', async (c) => {
   const [orders, byStatus, revenue, couriers, series, alerts] = await Promise.all([
     one<{ total: number; delivered: number; cancelled: number }>(
       db,
-      `SELECT COUNT(*) AS total, SUM(status = 'ENTREGUE') AS delivered, SUM(status = 'CANCELADO') AS cancelled FROM orders WHERE created_at BETWEEN ? AND ?`,
+      `SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'ENTREGUE' THEN 1 ELSE 0 END) AS delivered, SUM(CASE WHEN status = 'CANCELADO' THEN 1 ELSE 0 END) AS cancelled FROM orders WHERE created_at BETWEEN ? AND ?`,
       ...range,
     ),
     all(db, 'SELECT status, COUNT(*) AS n FROM orders WHERE created_at BETWEEN ? AND ? GROUP BY status', ...range),
@@ -47,11 +48,11 @@ r.get('/dashboard', async (c) => {
     ),
     one<{ active: number; online: number; pending: number }>(
       db,
-      `SELECT SUM(status = 'active') AS active, SUM(status = 'active' AND is_online = 1) AS online, (SELECT COUNT(*) FROM courier_applications WHERE status = 'pending') AS pending FROM courier_profiles`,
+      `SELECT SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active, SUM(CASE WHEN status = 'active' AND is_online = 1 THEN 1 ELSE 0 END) AS online, (SELECT COUNT(*) FROM courier_applications WHERE status = 'pending') AS pending FROM courier_profiles`,
     ),
     all(
       db,
-      `SELECT substr(datetime(created_at, '+2 hours'), 1, 10) AS day, COUNT(*) AS orders, SUM(status = 'ENTREGUE') AS delivered, COALESCE(SUM(CASE WHEN payment_status IN ('succeeded') THEN price_cents END),0) AS revenue_cents
+      `SELECT to_char(created_at::timestamptz AT TIME ZONE 'Africa/Maputo', 'YYYY-MM-DD') AS day, COUNT(*) AS orders, SUM(CASE WHEN status = 'ENTREGUE' THEN 1 ELSE 0 END) AS delivered, COALESCE(SUM(CASE WHEN payment_status IN ('succeeded') THEN price_cents END),0) AS revenue_cents
          FROM orders WHERE created_at BETWEEN ? AND ? GROUP BY day ORDER BY day`,
       ...range,
     ),
@@ -83,7 +84,7 @@ r.get('/customers', async (c) => {
     c.env.DB,
     `SELECT u.id, u.name, u.phone, u.email, u.status, u.created_at,
             (SELECT COUNT(*) FROM orders o WHERE o.customer_id = u.id) AS orders
-       FROM users u WHERE (u.name LIKE ? OR u.phone LIKE ?) ${status ? 'AND u.status = ?' : ''}
+       FROM users u WHERE (u.name ILIKE ? OR u.phone ILIKE ?) ${status ? 'AND u.status = ?' : ''}
       ORDER BY u.created_at DESC LIMIT 100`,
     ...(status ? [q, q, status] : [q, q]),
   );
@@ -190,7 +191,7 @@ r.post('/applications/:id/review', async (c) => {
   if (b.decision === 'approved') {
     stmts.push(
       c.env.DB.prepare("UPDATE courier_profiles SET status = 'active', approved_at = ?, zone_id = COALESCE(?, zone_id), updated_at = ? WHERE user_id = ?").bind(now, b.zone_id ?? null, now, app.user_id),
-      c.env.DB.prepare("INSERT OR IGNORE INTO user_roles (user_id, role, granted_by) VALUES (?, 'courier', ?)").bind(app.user_id, u.id),
+      c.env.DB.prepare("INSERT INTO user_roles (user_id, role, granted_by) VALUES (?, 'courier', ?) ON CONFLICT DO NOTHING").bind(app.user_id, u.id),
       notifyStmt(c.env.DB, app.user_id, `courier_app:${app.id}:approved`, 'conta', 'Candidatura aprovada', 'Bem-vindo à LevaGo! Confirme que o veículo está aprovado e fique online.'),
     );
   } else {
@@ -270,7 +271,7 @@ function orderFilters(c: Ctx) {
   const status = c.req.query('status');
   if (status) { where.push('o.status = ?'); p.push(status); }
   const q = c.req.query('q');
-  if (q) { where.push('(o.code LIKE ? OR cu.name LIKE ?)'); p.push(`%${q}%`, `%${q}%`); }
+  if (q) { where.push('(o.code ILIKE ? OR cu.name ILIKE ?)'); p.push(`%${q}%`, `%${q}%`); }
   const from = c.req.query('from');
   if (from) { where.push('o.created_at >= ?'); p.push(`${from}T00:00:00.000Z`); }
   const to = c.req.query('to');
@@ -315,7 +316,7 @@ r.get('/orders/:id', async (c) => {
     pickup_snapshot: undefined, dropoff_snapshot: undefined, pricing_snapshot: undefined,
     events: await all(c.env.DB, 'SELECT e.from_status, e.to_status, e.actor_role, e.note, e.created_at, u.name AS actor FROM order_events e LEFT JOIN users u ON u.id = e.actor_id WHERE order_id = ? ORDER BY e.created_at', c.req.param('id')),
     assignments: await all(c.env.DB, 'SELECT a.*, u.name AS courier FROM assignments a JOIN users u ON u.id = a.courier_id WHERE order_id = ? ORDER BY a.created_at', c.req.param('id')),
-    proofs: await all(c.env.DB, 'SELECT kind, method, checklist, photo_r2_key IS NOT NULL AS has_photo, created_at FROM delivery_proofs WHERE order_id = ?', c.req.param('id')),
+    proofs: await all(c.env.DB, 'SELECT kind, method, checklist, CASE WHEN photo_r2_key IS NOT NULL THEN 1 ELSE 0 END AS has_photo, created_at FROM delivery_proofs WHERE order_id = ?', c.req.param('id')),
     incidents: await all(c.env.DB, 'SELECT * FROM incident_reports WHERE order_id = ? ORDER BY created_at', c.req.param('id')),
     payments: await all(c.env.DB, 'SELECT id, provider, status, amount_cents, provider_ref, created_at FROM payment_intents WHERE order_id = ? ORDER BY created_at', c.req.param('id')),
     location: await one(c.env.DB, 'SELECT lat, lon, updated_at FROM location_updates WHERE order_id = ?', c.req.param('id')),
@@ -375,7 +376,7 @@ r.post('/orders/:id/status', async (c) => {
   const b = need<{ to: OrderStatus; reason: string }>(await c.req.json(), { to: v.oneOf('CANCELADO', 'EM_TRANSPORTE', 'DEVOLUCAO_PENDENTE', 'DEVOLVIDO', 'FALHA_ENTREGA', 'PENDENTE_ATRIBUICAO'), ...reasonRule });
   const o = await one<OrderRow>(c.env.DB, 'SELECT * FROM orders WHERE id = ?', c.req.param('id'));
   if (!o) throw notFound();
-  const extra: D1PreparedStatement[] = [auditStmt(c.env.DB, who(u), `order.status.${b.to}`, 'order', o.id, b.reason, { status: o.status }, { status: b.to })];
+  const extra: Stmt[] = [auditStmt(c.env.DB, who(u), `order.status.${b.to}`, 'order', o.id, b.reason, { status: o.status }, { status: b.to })];
   const set: Record<string, unknown> = {};
   if (b.to === 'CANCELADO') {
     set.cancel_reason = b.reason;
@@ -412,7 +413,7 @@ r.get('/plans', async (c) => {
   const plans = await all(c.env.DB, `SELECT p.*, (SELECT COUNT(*) FROM subscriptions s WHERE s.plan_id = p.id AND s.status = 'active') AS active_subscribers FROM subscription_plans p ORDER BY p.created_at DESC`);
   const subs = await all(
     c.env.DB,
-    `SELECT s.id, s.status, s.auto_renew, s.current_period_end, s.created_at, u.name AS customer, json_extract(s.plan_snapshot, '$.name') AS plan,
+    `SELECT s.id, s.status, s.auto_renew, s.current_period_end, s.created_at, u.name AS customer, (s.plan_snapshot::jsonb ->> 'name') AS plan,
             e.deliveries_used, e.deliveries_total
        FROM subscriptions s JOIN users u ON u.id = s.customer_id
        LEFT JOIN subscription_entitlements e ON e.subscription_id = s.id AND e.period_start = s.current_period_start
@@ -631,7 +632,7 @@ r.put('/zones/:id', async (c) => {
   const before = await one(c.env.DB, 'SELECT * FROM service_zones WHERE id = ?', c.req.param('id'));
   if (!before) throw notFound();
   await c.env.DB.batch([
-    c.env.DB.prepare('UPDATE service_zones SET name = ?, kind = ?, polygon = ?, active = ?, version = version + 1, updated_by = ?, updated_at = ? WHERE id = ?').bind(
+    c.env.DB.prepare('UPDATE service_zones SET name = ?, kind = ?, polygon = ?, active = ?, version = system_settings.version + 1, updated_by = ?, updated_at = ? WHERE id = ?').bind(
       b.name, b.kind, JSON.stringify(b.polygon), b.active ? 1 : 0, u.id, nowIso(), c.req.param('id'),
     ),
     auditStmt(c.env.DB, who(u), 'zone.update', 'service_zone', c.req.param('id'), b.reason, before, b),
@@ -715,26 +716,26 @@ r.get('/reports/:kind', async (c) => {
   const kind = c.req.param('kind');
   let rows: Record<string, unknown>[];
   if (kind === 'operacional') {
-    rows = await all(c.env.DB, `SELECT substr(datetime(created_at,'+2 hours'),1,10) AS dia, service_type AS modalidade, COUNT(*) AS pedidos,
-        SUM(status='ENTREGUE') AS entregues, SUM(status='CANCELADO') AS cancelados, SUM(status IN ('FALHA_ENTREGA','DEVOLVIDO','DEVOLUCAO_PENDENTE')) AS falhas,
-        ROUND(AVG(road_distance_m)/1000.0, 2) AS km_medio, ROUND(AVG(weight_kg),2) AS peso_medio
+    rows = await all(c.env.DB, `SELECT to_char(created_at::timestamptz AT TIME ZONE 'Africa/Maputo', 'YYYY-MM-DD') AS dia, service_type AS modalidade, COUNT(*) AS pedidos,
+        SUM(CASE WHEN status='ENTREGUE' THEN 1 ELSE 0 END) AS entregues, SUM(CASE WHEN status='CANCELADO' THEN 1 ELSE 0 END) AS cancelados, SUM(CASE WHEN status IN ('FALHA_ENTREGA','DEVOLVIDO','DEVOLUCAO_PENDENTE') THEN 1 ELSE 0 END) AS falhas,
+        ROUND((AVG(road_distance_m)/1000.0)::numeric, 2) AS km_medio, ROUND(AVG(weight_kg)::numeric,2) AS peso_medio
       FROM orders WHERE created_at BETWEEN ? AND ? GROUP BY dia, modalidade ORDER BY dia`, from, to);
   } else if (kind === 'financeiro') {
-    rows = await all(c.env.DB, `SELECT substr(datetime(created_at,'+2 hours'),1,10) AS dia, provider AS metodo,
-        SUM(status='succeeded') AS pagos, ROUND(SUM(CASE WHEN status='succeeded' THEN amount_cents ELSE 0 END)/100.0,2) AS valor_pago_mt,
-        SUM(status='failed') AS falhados, ROUND(SUM(CASE WHEN status='refunded' THEN amount_cents ELSE 0 END)/100.0,2) AS reembolsado_mt
+    rows = await all(c.env.DB, `SELECT to_char(created_at::timestamptz AT TIME ZONE 'Africa/Maputo', 'YYYY-MM-DD') AS dia, provider AS metodo,
+        SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) AS pagos, ROUND(SUM(CASE WHEN status='succeeded' THEN amount_cents ELSE 0 END)/100.0,2) AS valor_pago_mt,
+        SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS falhados, ROUND(SUM(CASE WHEN status='refunded' THEN amount_cents ELSE 0 END)/100.0,2) AS reembolsado_mt
       FROM payment_intents WHERE created_at BETWEEN ? AND ? GROUP BY dia, metodo ORDER BY dia`, from, to);
   } else if (kind === 'subscricoes') {
-    rows = await all(c.env.DB, `SELECT json_extract(s.plan_snapshot,'$.name') AS plano, s.status AS estado, COUNT(*) AS subscricoes,
+    rows = await all(c.env.DB, `SELECT (s.plan_snapshot::jsonb ->> 'name') AS plano, s.status AS estado, COUNT(*) AS subscricoes,
         COALESCE(SUM(e.deliveries_used),0) AS entregas_usadas, COALESCE(SUM(e.deliveries_total),0) AS entregas_incluidas
       FROM subscriptions s LEFT JOIN subscription_entitlements e ON e.subscription_id = s.id
       WHERE s.created_at BETWEEN ? AND ? GROUP BY plano, estado`, from, to);
   } else if (kind === 'desempenho') {
-    rows = await all(c.env.DB, `SELECT u.name AS estafeta, p.link_type AS vinculo, COUNT(o.id) AS entregas, ROUND(p.rating_avg,2) AS avaliacao,
+    rows = await all(c.env.DB, `SELECT u.name AS estafeta, p.link_type AS vinculo, COUNT(o.id) AS entregas, ROUND(p.rating_avg::numeric,2) AS avaliacao,
         ROUND(COALESCE((SELECT SUM(amount_cents) FROM earnings_ledger l WHERE l.courier_id = p.user_id AND l.created_at BETWEEN ? AND ?),0)/100.0,2) AS ganhos_mt
       FROM courier_profiles p JOIN users u ON u.id = p.user_id
       LEFT JOIN orders o ON o.assigned_courier_id = p.user_id AND o.status = 'ENTREGUE' AND o.updated_at BETWEEN ? AND ?
-      GROUP BY p.user_id ORDER BY entregas DESC`, from, to, from, to);
+      GROUP BY p.user_id, u.name ORDER BY entregas DESC`, from, to, from, to);
   } else throw notFound('Relatório desconhecido.');
   if (c.req.query('format') === 'csv') {
     await c.env.DB.batch([auditStmt(c.env.DB, who(u), 'report.export', 'report', kind, `${from}..${to}`)]);
@@ -767,7 +768,7 @@ r.put('/settings/:key', async (c) => {
   if (['payments', 'limits'].includes(key) && !u.roles.includes('super_admin')) throw forbidden('Só o super-administrador altera pagamentos e limites.');
   const before = await one<{ value: string }>(c.env.DB, 'SELECT value FROM system_settings WHERE key = ?', key);
   await c.env.DB.batch([
-    c.env.DB.prepare('INSERT INTO system_settings (key, value, updated_by) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = version + 1, updated_by = excluded.updated_by, updated_at = ?').bind(key, JSON.stringify(b.value), u.id, nowIso()),
+    c.env.DB.prepare('INSERT INTO system_settings (key, value, updated_by) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = system_settings.version + 1, updated_by = excluded.updated_by, updated_at = ?').bind(key, JSON.stringify(b.value), u.id, nowIso()),
     auditStmt(c.env.DB, who(u), 'settings.update', 'system_setting', key, b.reason, parseJson(before?.value, null), b.value),
   ]);
   return c.json({ ok: true });
@@ -798,7 +799,7 @@ r.post('/admins', async (c) => {
   if (target.id === u.id) throw forbidden('Não pode alterar os seus próprios privilégios.');
   await c.env.DB.batch([
     b.grant
-      ? c.env.DB.prepare('INSERT OR IGNORE INTO user_roles (user_id, role, granted_by) VALUES (?,?,?)').bind(target.id, b.role, u.id)
+      ? c.env.DB.prepare('INSERT INTO user_roles (user_id, role, granted_by) VALUES (?,?,?) ON CONFLICT DO NOTHING').bind(target.id, b.role, u.id)
       : c.env.DB.prepare('DELETE FROM user_roles WHERE user_id = ? AND role = ?').bind(target.id, b.role),
     auditStmt(c.env.DB, who(u), b.grant ? 'role.grant' : 'role.revoke', 'user', target.id, b.reason, null, { role: b.role }),
     ...(b.grant ? [] : [c.env.DB.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND app = 'admin' AND revoked_at IS NULL").bind(nowIso(), target.id)]),

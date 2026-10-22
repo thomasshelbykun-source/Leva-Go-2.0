@@ -1,6 +1,8 @@
+import { waitUntil } from '@vercel/functions';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { all, ApiError, getSetting, nowIso, one, parseJson, run, type Env, type Vars } from './lib/core';
+import { getDb } from './lib/db';
 import { fitsBusinessHours, type OrderStatus } from './lib/domain';
 import { envFlags, loadHours, loadSession, notifyStmt, transition, type OrderRow } from './lib/services';
 import admin from './routes/admin';
@@ -11,10 +13,39 @@ import payments from './routes/payments';
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
+/** Configuração lida das variáveis de ambiente da Vercel (ou do ficheiro .env local). */
+export function loadEnv(): Env {
+  const e = process.env;
+  return {
+    DB: getDb(),
+    ENVIRONMENT: e.ENVIRONMENT ?? 'staging',
+    CORS_ORIGINS: e.CORS_ORIGINS ?? 'http://localhost:5173',
+    CRON_SECRET: e.CRON_SECRET,
+    // Serviços públicos de teste; troque por servidores próprios em produção.
+    ROUTING_OSRM_URL: e.ROUTING_OSRM_URL ?? 'https://router.project-osrm.org',
+    GEOCODER_URL: e.GEOCODER_URL ?? 'https://nominatim.openstreetmap.org',
+    PAYMENTS_WEBHOOK_SECRET: e.PAYMENTS_WEBHOOK_SECRET,
+    SMS_PROVIDER_URL: e.SMS_PROVIDER_URL,
+    SMS_PROVIDER_KEY: e.SMS_PROVIDER_KEY,
+  };
+}
+
+let lastHousekeeping = 0;
+
+app.use('*', async (c, next) => {
+  c.env = loadEnv();
+  await next();
+  // Limpeza periódica: corre no máximo uma vez a cada 15 minutos por instância, depois da resposta.
+  if (Date.now() - lastHousekeeping > 15 * 60_000) {
+    lastHousekeeping = Date.now();
+    waitUntil(housekeeping(c.env).catch((err) => console.error('housekeeping', err)));
+  }
+});
+
 app.use('*', async (c, next) => {
   const origins = c.env.CORS_ORIGINS.split(',').map((s) => s.trim());
   return cors({
-    origin: (o) => (origins.includes(o) || /^https:\/\/[a-z0-9-]+\.levago\.pages\.dev$/.test(o) || o === 'capacitor://localhost' || o === 'https://localhost' ? o : origins[0]!),
+    origin: (o) => (origins.includes(o) || /^https:\/\/levago(-[a-z0-9-]+)?\.vercel\.app$/.test(o) || o === 'capacitor://localhost' || o === 'https://localhost' ? o : origins[0]!),
     allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     maxAge: 600,
@@ -68,6 +99,13 @@ app.get('/v1/config', async (c) => {
   });
 });
 
+/** Chamado pelo agendador da Vercel (vercel.json). A Vercel envia o CRON_SECRET no cabeçalho. */
+app.get('/v1/internal/housekeeping', async (c) => {
+  if (!c.env.CRON_SECRET || c.req.header('Authorization') !== `Bearer ${c.env.CRON_SECRET}`) throw new ApiError(401, 'sem_permissao', 'Sem permissão.');
+  await housekeeping(c.env);
+  return c.json({ ok: true });
+});
+
 app.route('/v1/auth', auth);
 app.route('/v1', customer);
 app.route('/v1/courier', courier);
@@ -95,13 +133,10 @@ export async function housekeeping(env: Env) {
     ]);
   }
   await run(db, 'DELETE FROM quotes WHERE used_at IS NULL AND expires_at < ?', new Date(Date.now() - 86_400_000).toISOString());
-  await run(db, 'DELETE FROM rate_limits WHERE window < ?', new Date(Date.now() - 48 * 3_600_000).toISOString());
+  await run(db, 'DELETE FROM rate_limits WHERE bucket < ?', new Date(Date.now() - 48 * 3_600_000).toISOString());
   await run(db, 'DELETE FROM sessions WHERE expires_at < ?', new Date(Date.now() - 7 * 86_400_000).toISOString());
 }
 
-export default {
-  fetch: app.fetch,
-  scheduled: (_e: ScheduledController, env: Env, ctx: ExecutionContext) => ctx.waitUntil(housekeeping(env)),
-} satisfies ExportedHandler<Env>;
+export default app;
 
 export { app };

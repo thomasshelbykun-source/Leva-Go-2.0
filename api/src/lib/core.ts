@@ -1,11 +1,12 @@
+import type { Db } from './db';
 import type { Context } from 'hono';
 
 export type Role = 'customer' | 'courier' | 'admin' | 'super_admin';
 export type AppName = 'cliente' | 'estafeta' | 'admin';
 
 export interface Env {
-  DB: D1Database;
-  FILES?: R2Bucket; // opcional até o R2 estar activo na conta
+  DB: Db;
+  CRON_SECRET?: string;
   ENVIRONMENT: string; // dev | test | staging | production
   CORS_ORIGINS: string;
   ROUTING_OSRM_URL?: string;
@@ -48,16 +49,16 @@ export const uuid = () => crypto.randomUUID();
 export const nowIso = () => new Date().toISOString();
 export const addMinutes = (d: Date, m: number) => new Date(d.getTime() + m * 60_000);
 
-export async function one<T = Record<string, unknown>>(db: D1Database, sql: string, ...params: unknown[]): Promise<T | null> {
+export async function one<T = Record<string, unknown>>(db: Db, sql: string, ...params: unknown[]): Promise<T | null> {
   return (await db.prepare(sql).bind(...params).first<T>()) ?? null;
 }
 
-export async function all<T = Record<string, unknown>>(db: D1Database, sql: string, ...params: unknown[]): Promise<T[]> {
+export async function all<T = Record<string, unknown>>(db: Db, sql: string, ...params: unknown[]): Promise<T[]> {
   const r = await db.prepare(sql).bind(...params).all<T>();
   return r.results ?? [];
 }
 
-export async function run(db: D1Database, sql: string, ...params: unknown[]) {
+export async function run(db: Db, sql: string, ...params: unknown[]) {
   return db.prepare(sql).bind(...params).run();
 }
 
@@ -70,7 +71,7 @@ export function parseJson<T>(s: unknown, fallback: T): T {
   }
 }
 
-export async function getSetting<T>(db: D1Database, key: string, fallback: T): Promise<T> {
+export async function getSetting<T>(db: Db, key: string, fallback: T): Promise<T> {
   const row = await one<{ value: string }>(db, 'SELECT value FROM system_settings WHERE key = ?', key);
   return row ? { ...fallback, ...parseJson<T>(row.value, fallback) } : fallback;
 }
@@ -121,10 +122,20 @@ export function maskPhone(phone: string): string {
   return phone.length > 6 ? `${phone.slice(0, 6)}***${phone.slice(-2)}` : '***';
 }
 
-/** Armazenamento de ficheiros. Responde 503 enquanto o R2 não estiver ligado. */
-export function files(env: Env): R2Bucket {
-  if (!env.FILES) throw new ApiError(503, 'armazenamento_desligado', 'O envio de ficheiros ainda não está activo. Tente mais tarde.');
-  return env.FILES;
+/** Ficheiros privados guardados na base de dados (tabela file_blobs). */
+export const MAX_FILE_BYTES = 4 * 1024 * 1024; // a Vercel aceita pedidos até 4,5 MB
+
+export function files(env: Env) {
+  return {
+    async put(key: string, data: ArrayBuffer, contentType: string) {
+      if (data.byteLength > MAX_FILE_BYTES) throw bad('ficheiro', 'O ficheiro tem mais de 4 MB.');
+      await run(env.DB, 'INSERT INTO file_blobs (key, content_type, size_bytes, data) VALUES (?,?,?,?)', key, contentType, data.byteLength, Buffer.from(data));
+    },
+    async get(key: string) {
+      const row = await one<{ content_type: string; data: Buffer }>(env.DB, 'SELECT content_type, data FROM file_blobs WHERE key = ?', key);
+      return row ? { body: new Uint8Array(row.data), contentType: row.content_type } : null;
+    },
+  };
 }
 
 export function isProd(env: Env) {

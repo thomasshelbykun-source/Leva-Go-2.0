@@ -2,7 +2,7 @@
 
 Plataforma de entregas de encomendas para Quelimane. Este repositório tem:
 
-- `api/`: a API (Cloudflare Workers com Hono), a base de dados D1 e os ficheiros privados no R2.
+- `api/`: a API (Hono na Vercel) e a base de dados Postgres no Neon. Os ficheiros privados ficam na própria base.
 - `web/`: o site (PWA em React) com três áreas: Cliente (`/cliente`), Estafeta (`/estafeta`) e Admin (`/admin`).
 
 A versão Android (APK) vem depois, com Capacitor, a partir do mesmo site.
@@ -14,33 +14,49 @@ A versão Android (APK) vem depois, com Capacitor, a partir do mesmo site.
 - Estados da encomenda: AGUARDA_PAGAMENTO, PENDENTE_ATRIBUICAO, ATRIBUIDO, ACEITE, RECOLHIDO, EM_TRANSPORTE, ENTREGUE, e também CANCELADO, FALHA_ENTREGA, DEVOLUCAO_PENDENTE e DEVOLVIDO.
 - Os pagamentos M-Pesa e e-Mola estão simulados até haver as APIs oficiais. Em staging existe o método "Pagamento de teste (simulado)".
 
-## Publicar no Cloudflare
+## Publicar (Vercel e Neon)
 
-Os testes correm em cada envio para `main`. A publicação pelo GitHub Actions (`.github/workflows/deploy.yml`) só corre quando carrega em Run workflow. Também pode publicar pelo painel do Cloudflare, ligado ao repositório (ver `docs/publicar-manual-cloudflare.md`).
+A Vercel está ligada a este repositório e publica sozinha em cada envio para `main`. Há 2 projectos:
 
-1. No Cloudflare, crie um API Token com estas permissões: Workers Scripts (Edit), D1 (Edit), Workers R2 Storage (Edit), Cloudflare Pages (Edit) e Account Settings (Read).
-2. No GitHub, abra Settings > Secrets and variables > Actions e crie estes segredos:
-   - `CLOUDFLARE_API_TOKEN`: o token do passo 1.
-   - `CLOUDFLARE_ACCOUNT_ID`: o Account ID (aparece no painel do Cloudflare, à direita).
-   - `PAYMENTS_WEBHOOK_SECRET` (opcional): só quando houver um provedor de pagamentos real.
-3. Abra Actions > Testar e publicar > Run workflow.
+| Projecto Vercel | Pasta (Root Directory) | O que é |
+| --- | --- | --- |
+| `levago-api` | `api` | A API. Framework: Hono. |
+| `levago` | `web` | O site. Framework: Vite. |
 
-O workflow faz isto:
+Variáveis de ambiente do projecto `levago-api` (Settings > Environment Variables):
 
-1. Corre os testes da API e compila o site.
-2. Cria a base D1 `levago` se não existir, aplica as migrações e, na primeira vez, carrega as zonas e a tarifa de teste.
-3. Cria o armazenamento R2 `levago-files` se não existir.
-4. Publica a API no endereço `https://levago-api.<subdomínio>.workers.dev`.
-5. Publica o site no Cloudflare Pages (projecto `levago`). Para usar outro nome, crie a variável `PAGES_PROJECT` em Settings > Secrets and variables > Actions > Variables.
+- `DATABASE_URL`: o endereço "pooled" da base Neon `levago`. É um segredo: nunca o coloque no código.
+- `ENVIRONMENT`: `staging` (ou `production` quando entrar em produção).
+- `CORS_ORIGINS`: o endereço do site, por exemplo `https://levago.vercel.app`.
+- `CRON_SECRET`: um texto aleatório. A Vercel usa-o para chamar a limpeza diária.
+- `PAYMENTS_WEBHOOK_SECRET` (opcional): só quando houver um provedor de pagamentos real.
 
-O resumo da execução mostra os endereços do site e da API.
+Variável do projecto `levago`: `VITE_API_URL` = o endereço da API, sem `/` no fim.
 
-Nota: se a conta Cloudflare ainda não tiver um subdomínio workers.dev, abra Workers & Pages no painel uma vez para o activar.
+### Base de dados
+
+As tabelas estão em `api/db/`. Para aplicar as migrações a uma base nova:
+
+```bash
+cd api
+DATABASE_URL='postgres://...' npm run db:migrate   # tabelas
+DATABASE_URL='postgres://...' npm run db:seed      # zona e tarifa de teste (só staging)
+```
+
+### Tarefas periódicas
+
+A API cancela pedidos por pagar, expira subscrições e limpa dados antigos. Corre no máximo a cada 15 minutos, depois de um pedido, e também 1 vez por dia pelo agendador da Vercel (`api/vercel.json`).
 
 ## Primeiro administrador
 
 1. Crie uma conta normal no site, em `/cliente/registo`.
-2. No GitHub, abra Actions > Criar administrador > Run workflow e escreva o telemóvel no formato `+2588XXXXXXXX`.
+2. Dê o papel de administrador a essa conta:
+
+   ```bash
+   cd api
+   DATABASE_URL='postgres://...' npm run make-admin -- +258841234567
+   ```
+
 3. Entre em `/admin` com o mesmo telemóvel e palavra-passe.
 
 ## Desenvolvimento local
@@ -50,8 +66,9 @@ Precisa de Node 22.
 ```bash
 npm install
 cd api
-npm run db:migrate:local
-npm run db:seed:local
+cp .env.example .env.local   # DATABASE_URL de um Postgres local
+npm run db:migrate
+npm run db:seed
 npm run dev                  # API em http://localhost:8787
 ```
 
@@ -65,24 +82,17 @@ npm run dev                   # site em http://localhost:5173
 
 Em ambiente `test` ou `staging`, o código SMS do registo aparece no ecrã. Em produção vai por SMS.
 
-Para dar o papel de administrador a uma conta local:
-
-```bash
-cd api
-bash scripts/make-admin.sh +258841234567
-```
-
 ## Testes
 
 ```bash
 cd api
 npx vitest run        # regras de negócio
-npm run test:e2e      # fluxo completo com D1 local
+TEST_DATABASE_URL='postgres://postgres@localhost:5432/postgres' npm run test:e2e   # fluxo completo com uma base temporária
 ```
 
 ## Segurança
 
-- Nunca coloque tokens ou chaves no código nem no repositório. Use apenas os segredos do GitHub e do Cloudflare.
+- Nunca coloque tokens ou chaves no código nem no repositório. Use apenas as variáveis de ambiente da Vercel.
 - As palavras-passe usam PBKDF2. As sessões guardam só o hash do token.
 - O PIN de pagamento nunca é guardado.
 - Os estados finais da encomenda não mudam. Todas as acções do Admin ficam na auditoria.

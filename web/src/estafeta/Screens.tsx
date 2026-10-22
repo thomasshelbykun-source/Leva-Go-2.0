@@ -135,7 +135,7 @@ function Documents({ me, reload }: { me: any; reload: () => void }) {
             ))}
           </select>
         </Field>
-        <Field label="Ficheiro (JPG, PNG, WEBP ou PDF até 5 MB)">
+        <Field label="Ficheiro (JPG, PNG, WEBP ou PDF até 4 MB)">
           <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </Field>
         <ErrorBox error={a.error} />
