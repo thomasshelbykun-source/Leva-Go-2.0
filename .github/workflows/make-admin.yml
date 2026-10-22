@@ -1,0 +1,38 @@
+# Dá o papel de administrador a uma conta já registada no site.
+# Correr à mão em Actions > Criar administrador > Run workflow.
+name: Criar administrador
+
+on:
+  workflow_dispatch:
+    inputs:
+      phone:
+        description: Telemóvel da conta, no formato +2588XXXXXXXX
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  admin:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PHONE: ${{ inputs.phone }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Ligar à base D1
+        working-directory: api
+        run: |
+          set -euo pipefail
+          ID=$(npx wrangler d1 list --json | jq -r '.[] | select(.name == "levago") | .uuid')
+          [ -n "$ID" ] || { echo "::error::A base D1 levago ainda não existe. Publique primeiro."; exit 1; }
+          sed -i "s/^database_id = .*/database_id = \"$ID\"/" wrangler.toml
+      - name: Dar o papel
+        working-directory: api
+        run: bash scripts/make-admin.sh "$PHONE" --remote

@@ -1,0 +1,26 @@
+name = "levago-api"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "staging"
+# Origem do site (Cloudflare Pages). Vários valores separados por vírgula.
+CORS_ORIGINS = "http://localhost:5173,https://levago.pages.dev"
+# Provedor de rotas por estrada (pendência 14.4). Servidor OSRM de teste;
+# em produção usar um servidor próprio ou um provedor contratado.
+ROUTING_OSRM_URL = "https://router.project-osrm.org"
+GEOCODER_URL = "https://nominatim.openstreetmap.org"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "levago"
+database_id = "00000000-0000-0000-0000-000000000000" # substituído pelo GitHub Actions
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "levago-files"
+
+[triggers]
+crons = ["*/15 * * * *"]
