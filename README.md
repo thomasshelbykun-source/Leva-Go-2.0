@@ -16,24 +16,28 @@ A versão Android (APK) vem depois, com Capacitor, a partir do mesmo site.
 
 ## Publicar no Cloudflare
 
-A publicação é automática com GitHub Actions (`.github/workflows/deploy.yml`) em cada envio para `main`.
+Os testes correm sozinhos em cada envio (`.github/workflows/ci.yml`). A publicação não corre sozinha: faz-se à mão, um passo de cada vez (`.github/workflows/deploy.yml`).
 
-1. No Cloudflare, crie um API Token com estas permissões: Workers Scripts (Edit), D1 (Edit), Workers R2 Storage (Edit), Cloudflare Pages (Edit) e Account Settings (Read).
+Preparar uma vez:
+
+1. No Cloudflare, crie um API Token com estas permissões em modo Edit: Workers Scripts, D1, Workers R2 Storage e Cloudflare Pages. Junte Account Settings em modo Read.
 2. No GitHub, abra Settings > Secrets and variables > Actions e crie estes segredos:
    - `CLOUDFLARE_API_TOKEN`: o token do passo 1.
    - `CLOUDFLARE_ACCOUNT_ID`: o Account ID (aparece no painel do Cloudflare, à direita).
    - `PAYMENTS_WEBHOOK_SECRET` (opcional): só quando houver um provedor de pagamentos real.
-3. Abra Actions > Testar e publicar > Run workflow, ou envie um commit para `main`.
 
-O workflow faz isto:
+Publicar: abra Actions > Publicar no Cloudflare > Run workflow e escolha um passo. Siga esta ordem:
 
-1. Corre os testes da API e compila o site.
-2. Cria a base D1 `levago` se não existir, aplica as migrações e, na primeira vez, carrega as zonas e a tarifa de teste.
-3. Cria o armazenamento R2 `levago-files` se não existir.
-4. Publica a API no endereço `https://levago-api.<subdomínio>.workers.dev`.
-5. Publica o site no Cloudflare Pages (projecto `levago`). Para usar outro nome, crie a variável `PAGES_PROJECT` em Settings > Secrets and variables > Actions > Variables.
+1. `1-base-de-dados`: cria a base D1 `levago`, aplica as migrações e, na primeira vez, carrega as zonas e a tarifa de teste.
+2. `2-armazenamento`: cria o armazenamento R2 `levago-files` para fotos e documentos.
+3. `3-api`: publica a API em `https://levago-api.<subdomínio>.workers.dev`.
+4. `4-site`: publica o site no Cloudflare Pages (projecto `levago`). Depois, corra outra vez o passo `3-api` para a API aceitar pedidos do endereço do site.
 
-O resumo da execução mostra os endereços do site e da API.
+Cada passo pode ser repetido sem estragar o que já existe. O resumo da execução mostra os endereços. Para usar outro nome no Pages, crie a variável `PAGES_PROJECT` em Settings > Secrets and variables > Actions > Variables.
+
+### Conta de teste e conta verdadeira
+
+Pode publicar primeiro numa conta Cloudflare de teste. Para passar à conta verdadeira, troque os dois segredos e corra os passos outra vez. Os dados da conta de teste (contas, encomendas, estafetas) não passam para a conta verdadeira.
 
 Nota: se a conta Cloudflare ainda não tiver um subdomínio workers.dev, abra Workers & Pages no painel uma vez para o activar.
 

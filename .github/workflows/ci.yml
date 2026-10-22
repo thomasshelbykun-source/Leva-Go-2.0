@@ -1,0 +1,31 @@
+# Testes em cada envio. Não publica nada.
+name: Testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Testes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: API, testes unitários e tipos
+        working-directory: api
+        run: npx vitest run && npx tsc --noEmit
+      - name: API, fluxo ponta a ponta (D1 local)
+        working-directory: api
+        run: npm run test:e2e
+      - name: Site, compilar
+        working-directory: web
+        run: npm run build

@@ -1,16 +1,25 @@
-# Testa e publica o LevaGo 2.0 no Cloudflare.
-# Precisa dos segredos do repositório CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID.
+# Publica o LevaGo 2.0 no Cloudflare, um passo de cada vez.
+# Correr à mão: Actions > Publicar no Cloudflare > Run workflow > escolher o passo.
+# Ordem: 1-base-de-dados, 2-armazenamento, 3-api, 4-site.
+# Precisa dos segredos CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID.
 # Opcional: PAYMENTS_WEBHOOK_SECRET (só quando houver um provedor de pagamentos real).
-name: Testar e publicar
+name: Publicar no Cloudflare
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
+    inputs:
+      passo:
+        description: Passo a executar
+        required: true
+        type: choice
+        options:
+          - 1-base-de-dados
+          - 2-armazenamento
+          - 3-api
+          - 4-site
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy
   cancel-in-progress: false
 
 permissions:
@@ -19,38 +28,16 @@ permissions:
 env:
   D1_NAME: levago
   R2_BUCKET: levago-files
+  WORKER_NAME: levago-api
   PAGES_PROJECT: ${{ vars.PAGES_PROJECT || 'levago' }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  PAYMENTS_WEBHOOK_SECRET: ${{ secrets.PAYMENTS_WEBHOOK_SECRET }}
 
 jobs:
-  test:
-    name: Testes
+  publish:
+    name: ${{ inputs.passo }}
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: API, testes unitários e tipos
-        working-directory: api
-        run: npx vitest run && npx tsc --noEmit
-      - name: API, fluxo ponta a ponta (D1 local)
-        working-directory: api
-        run: npm run test:e2e
-      - name: Site, compilar
-        working-directory: web
-        run: npm run build
-
-  deploy:
-    name: Publicar no Cloudflare
-    needs: test
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      PAYMENTS_WEBHOOK_SECRET: ${{ secrets.PAYMENTS_WEBHOOK_SECRET }}
     steps:
       - name: Verificar segredos
         run: |
@@ -65,79 +52,101 @@ jobs:
           cache: npm
       - run: npm ci
 
-      - name: Base de dados D1 (criar se não existir)
-        id: d1
+      # ---------- 1. Base de dados D1
+      - name: Criar a base D1 (se não existir)
+        id: d1new
+        if: inputs.passo == '1-base-de-dados'
         working-directory: api
         run: |
           set -euo pipefail
           ID=$(npx wrangler d1 list --json | jq -r --arg n "$D1_NAME" '.[] | select(.name == $n) | .uuid')
-          CREATED=false
           if [ -z "$ID" ]; then
             npx wrangler d1 create "$D1_NAME"
-            ID=$(npx wrangler d1 list --json | jq -r --arg n "$D1_NAME" '.[] | select(.name == $n) | .uuid')
-            CREATED=true
+            echo "created=true" >> "$GITHUB_OUTPUT"
           fi
-          [ -n "$ID" ] || { echo "::error::Não foi possível obter o id da base D1."; exit 1; }
+
+      - name: Ligar à base D1
+        if: inputs.passo == '1-base-de-dados' || inputs.passo == '3-api'
+        working-directory: api
+        run: |
+          set -euo pipefail
+          ID=$(npx wrangler d1 list --json | jq -r --arg n "$D1_NAME" '.[] | select(.name == $n) | .uuid')
+          [ -n "$ID" ] || { echo "::error::A base D1 ainda não existe. Corra primeiro o passo 1-base-de-dados."; exit 1; }
           sed -i "s/^database_id = .*/database_id = \"$ID\"/" wrangler.toml
-          echo "created=$CREATED" >> "$GITHUB_OUTPUT"
 
       - name: Aplicar migrações
+        if: inputs.passo == '1-base-de-dados'
         working-directory: api
         run: npx wrangler d1 migrations apply "$D1_NAME" --remote
 
       - name: Dados iniciais (zonas e tarifa de teste, só na primeira vez)
-        if: steps.d1.outputs.created == 'true'
+        if: inputs.passo == '1-base-de-dados' && steps.d1new.outputs.created == 'true'
         working-directory: api
         run: npx wrangler d1 execute "$D1_NAME" --remote --file seed/staging.sql
 
-      - name: Armazenamento R2 (criar se não existir)
+      # ---------- 2. Armazenamento R2
+      - name: Criar o armazenamento R2 (se não existir)
+        if: inputs.passo == '2-armazenamento'
         working-directory: api
         run: |
           if ! OUT=$(npx wrangler r2 bucket create "$R2_BUCKET" 2>&1); then
             echo "$OUT"
             echo "$OUT" | grep -qi "already exist" || exit 1
           fi
+          echo "Armazenamento $R2_BUCKET pronto."
 
-      - name: Projecto do site no Pages (criar se não existir)
-        id: pages
+      # ---------- Endereços (usados pela API e pelo site)
+      - name: Endereços do site e da API
+        id: urls
+        if: inputs.passo == '3-api' || inputs.passo == '4-site'
         run: |
           set -euo pipefail
-          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects"
+          BASE="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID"
           AUTH="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
-          if ! curl -fsS -H "$AUTH" "$API/$PAGES_PROJECT" > /dev/null 2>&1; then
+          SUB=$(curl -fsS -H "$AUTH" "$BASE/workers/subdomain" | jq -r '.result.subdomain // empty')
+          [ -n "$SUB" ] || { echo "::error::A conta não tem subdomínio workers.dev. Abra Workers & Pages no painel do Cloudflare uma vez para o activar."; exit 1; }
+          echo "api=https://$WORKER_NAME.$SUB.workers.dev" >> "$GITHUB_OUTPUT"
+          if [ "${{ inputs.passo }}" = "4-site" ] && ! curl -fsS -H "$AUTH" "$BASE/pages/projects/$PAGES_PROJECT" > /dev/null 2>&1; then
             npx wrangler pages project create "$PAGES_PROJECT" --production-branch main
           fi
-          SUB=$(curl -fsS -H "$AUTH" "$API/$PAGES_PROJECT" | jq -r '.result.subdomain')
-          echo "url=https://$SUB" >> "$GITHUB_OUTPUT"
+          SITE=$(curl -fsS -H "$AUTH" "$BASE/pages/projects/$PAGES_PROJECT" 2>/dev/null | jq -r '.result.subdomain // empty' || true)
+          echo "site=${SITE:+https://$SITE}" >> "$GITHUB_OUTPUT"
 
-      - name: Publicar a API (Worker)
-        id: api
+      # ---------- 3. API (Worker)
+      - name: Publicar a API
+        if: inputs.passo == '3-api'
         working-directory: api
         env:
-          SITE_URL: ${{ steps.pages.outputs.url }}
+          SITE_URL: ${{ steps.urls.outputs.site }}
         run: |
           set -euo pipefail
-          npx wrangler deploy --var "CORS_ORIGINS:$SITE_URL" | tee deploy.log
-          URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
-          [ -n "$URL" ] || { echo "::error::Não encontrei o endereço workers.dev. Active o subdomínio workers.dev na conta Cloudflare."; exit 1; }
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          if [ -n "$SITE_URL" ]; then
+            npx wrangler deploy --var "CORS_ORIGINS:$SITE_URL"
+          else
+            echo "::warning::O site ainda não existe. Depois do passo 4-site, corra outra vez o passo 3-api para autorizar o endereço do site."
+            npx wrangler deploy
+          fi
 
       - name: Segredo do webhook de pagamentos
-        if: env.PAYMENTS_WEBHOOK_SECRET != ''
+        if: inputs.passo == '3-api' && env.PAYMENTS_WEBHOOK_SECRET != ''
         working-directory: api
         run: printf '%s' "$PAYMENTS_WEBHOOK_SECRET" | npx wrangler secret put PAYMENTS_WEBHOOK_SECRET
 
-      - name: Compilar e publicar o site (Pages)
+      # ---------- 4. Site (Pages)
+      - name: Compilar e publicar o site
+        if: inputs.passo == '4-site'
         env:
-          VITE_API_URL: ${{ steps.api.outputs.url }}
+          VITE_API_URL: ${{ steps.urls.outputs.api }}
         run: |
           npm run build -w web
           npx wrangler pages deploy web/dist --project-name "$PAGES_PROJECT" --branch main --commit-dirty=true
 
       - name: Resumo
+        if: inputs.passo == '3-api' || inputs.passo == '4-site'
         run: |
           {
-            echo "### LevaGo 2.0 publicado"
-            echo "- Site: ${{ steps.pages.outputs.url }}"
-            echo "- API: ${{ steps.api.outputs.url }}/v1/config"
+            echo "### Passo ${{ inputs.passo }} concluído"
+            echo "- API: ${{ steps.urls.outputs.api }}/v1/config"
+            [ -n "${{ steps.urls.outputs.site }}" ] && echo "- Site: ${{ steps.urls.outputs.site }}"
+            true
           } >> "$GITHUB_STEP_SUMMARY"
