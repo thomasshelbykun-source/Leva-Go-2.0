@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   canTransition, checkRoadDistance, checkWeight, courierEarning, coverageFor, fitsBusinessHours, maputoToUtc, priceFor, slotsForDay, vehicleCanCarry,
   type HoursRow, type LonLat,
-} from '../src/lib/domain';
-import { normalizePhone } from '../src/lib/core';
+} from '../src/lib/domain.js';
+import { normalizePhone } from '../src/lib/core.js';
 
 // Horário aprovado (secção 0): dom–qui 07–22, sex 07–16, sáb 17–22.
 const HOURS: HoursRow[] = [

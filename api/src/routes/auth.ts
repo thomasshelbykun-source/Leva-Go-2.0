@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
-import { sendOtp } from '../lib/adapters';
-import { addMinutes, ApiError, bad, conflict, need, normalizePhone, nowIso, one, parseJson, run, uuid, v, type AppName, type Env, type Role, type Vars } from '../lib/core';
-import { hashPassword, passwordProblem, randomDigits, sha256, verifyPassword } from '../lib/crypto';
-import { auditStmt, createSession, rateLimit, requireRole } from '../lib/services';
+import { sendOtp } from '../lib/adapters.js';
+import { addMinutes, ApiError, bad, conflict, need, normalizePhone, nowIso, one, parseJson, run, uuid, v, type AppName, type Env, type Role, type Vars } from '../lib/core.js';
+import { hashPassword, passwordProblem, randomDigits, sha256, verifyPassword } from '../lib/crypto.js';
+import { auditStmt, createSession, rateLimit, requireRole } from '../lib/services.js';
 
 const auth = new Hono<{ Bindings: Env; Variables: Vars }>();
 

@@ -1,15 +1,15 @@
 import { waitUntil } from '@vercel/functions';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { all, ApiError, getSetting, nowIso, one, parseJson, run, type Env, type Vars } from './lib/core';
-import { getDb } from './lib/db';
-import { fitsBusinessHours, type OrderStatus } from './lib/domain';
-import { envFlags, loadHours, loadSession, notifyStmt, transition, type OrderRow } from './lib/services';
-import admin from './routes/admin';
-import auth from './routes/auth';
-import courier from './routes/courier';
-import customer from './routes/customer';
-import payments from './routes/payments';
+import { all, ApiError, getSetting, nowIso, one, parseJson, run, type Env, type Vars } from './lib/core.js';
+import { getDb } from './lib/db.js';
+import { fitsBusinessHours, type OrderStatus } from './lib/domain.js';
+import { envFlags, loadHours, loadSession, notifyStmt, transition, type OrderRow } from './lib/services.js';
+import admin from './routes/admin.js';
+import auth from './routes/auth.js';
+import courier from './routes/courier.js';
+import customer from './routes/customer.js';
+import payments from './routes/payments.js';
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 

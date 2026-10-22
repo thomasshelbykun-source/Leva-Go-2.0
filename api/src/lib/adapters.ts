@@ -1,5 +1,5 @@
 // Adaptadores de integrações externas. Cada um pode ser trocado sem mexer nas regras de negócio.
-import { ApiError, type Env } from './core';
+import { ApiError, type Env } from './core.js';
 
 // ------------------------------------------------------------------ Rotas por estrada
 export interface RouteResult {

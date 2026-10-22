@@ -1,9 +1,9 @@
-import type { Stmt } from '../lib/db';
+import type { Stmt } from '../lib/db.js';
 import { Hono } from 'hono';
-import { roadRoute } from '../lib/adapters';
-import { all, bad, conflict, files, forbidden, getSetting, need, normalizePhone, notFound, nowIso, one, parseJson, run, uuid, v, type AuthUser, type Ctx, type Env, type Vars } from '../lib/core';
-import { checkRoadDistance, pointInPolygon, priceFor, STATUS_LABELS, vehicleCanCarry, type LonLat, type OrderStatus, type PricingRule } from '../lib/domain';
-import { actorRole, auditStmt, notifyStmt, requireRole, transition, type OrderRow } from '../lib/services';
+import { roadRoute } from '../lib/adapters.js';
+import { all, bad, conflict, files, forbidden, getSetting, need, normalizePhone, notFound, nowIso, one, parseJson, run, uuid, v, type AuthUser, type Ctx, type Env, type Vars } from '../lib/core.js';
+import { checkRoadDistance, pointInPolygon, priceFor, STATUS_LABELS, vehicleCanCarry, type LonLat, type OrderStatus, type PricingRule } from '../lib/domain.js';
+import { actorRole, auditStmt, notifyStmt, requireRole, transition, type OrderRow } from '../lib/services.js';
 
 const r = new Hono<{ Bindings: Env; Variables: Vars }>();
 

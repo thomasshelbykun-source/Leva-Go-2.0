@@ -1,16 +1,16 @@
-import type { Db, Stmt } from '../lib/db';
+import type { Db, Stmt } from '../lib/db.js';
 import { Hono } from 'hono';
-import { reversePlace, roadRoute, searchPlaces, startCharge } from '../lib/adapters';
+import { reversePlace, roadRoute, searchPlaces, startCharge } from '../lib/adapters.js';
 import {
   addMinutes, all, ApiError, bad, conflict, getSetting, need, normalizePhone, notFound, nowIso, one, parseJson, run, uuid, v,
   type Env, type Vars,
-} from '../lib/core';
-import { hashPassword, orderCode, randomDigits, sha256, verifyPassword } from '../lib/crypto';
+} from '../lib/core.js';
+import { hashPassword, orderCode, randomDigits, sha256, verifyPassword } from '../lib/crypto.js';
 import {
   checkRoadDistance, checkWeight, coverageFor, customerCanCancel, fitsBusinessHours, priceFor, slotsForDay, STATUS_LABELS,
   type OrderStatus, type PricingRule,
-} from '../lib/domain';
-import { guardedBatch, loadHours, loadZones, notifyStmt, rateLimit, requireRole, transition, type OrderRow } from '../lib/services';
+} from '../lib/domain.js';
+import { guardedBatch, loadHours, loadZones, notifyStmt, rateLimit, requireRole, transition, type OrderRow } from '../lib/services.js';
 
 const r = new Hono<{ Bindings: Env; Variables: Vars }>();
 

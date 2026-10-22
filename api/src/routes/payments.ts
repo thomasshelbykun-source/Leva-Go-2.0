@@ -1,8 +1,8 @@
-import type { Db } from '../lib/db';
+import type { Db } from '../lib/db.js';
 import { Hono } from 'hono';
-import { ApiError, bad, forbidden, isProd, need, notFound, nowIso, one, parseJson, uuid, v, type Env, type Vars } from '../lib/core';
-import { hmacSha256, timingSafeEqual } from '../lib/crypto';
-import { guardedBatch, notifyStmt, requireRole, transition, type OrderRow } from '../lib/services';
+import { ApiError, bad, forbidden, isProd, need, notFound, nowIso, one, parseJson, uuid, v, type Env, type Vars } from '../lib/core.js';
+import { hmacSha256, timingSafeEqual } from '../lib/crypto.js';
+import { guardedBatch, notifyStmt, requireRole, transition, type OrderRow } from '../lib/services.js';
 
 const r = new Hono<{ Bindings: Env; Variables: Vars }>();
 

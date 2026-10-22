@@ -1,9 +1,9 @@
-import type { Db, Stmt } from '../lib/db';
+import type { Db, Stmt } from '../lib/db.js';
 import { Hono } from 'hono';
-import { all, bad, conflict, files, forbidden, getSetting, need, notFound, nowIso, one, parseJson, run, uuid, v, type Env, type Vars } from '../lib/core';
-import { sha256 } from '../lib/crypto';
-import { ACTIVE_COURIER_STATUSES, courierEarning, fitsBusinessHours, maputoParts, STATUS_LABELS, vehicleCanCarry, type OrderStatus } from '../lib/domain';
-import { auditStmt, earningStmt, guardedBatch, loadHours, notifyStmt, requireRole, transition, type OrderRow } from '../lib/services';
+import { all, bad, conflict, files, forbidden, getSetting, need, notFound, nowIso, one, parseJson, run, uuid, v, type Env, type Vars } from '../lib/core.js';
+import { sha256 } from '../lib/crypto.js';
+import { ACTIVE_COURIER_STATUSES, courierEarning, fitsBusinessHours, maputoParts, STATUS_LABELS, vehicleCanCarry, type OrderStatus } from '../lib/domain.js';
+import { auditStmt, earningStmt, guardedBatch, loadHours, notifyStmt, requireRole, transition, type OrderRow } from '../lib/services.js';
 
 const r = new Hono<{ Bindings: Env; Variables: Vars }>();
 

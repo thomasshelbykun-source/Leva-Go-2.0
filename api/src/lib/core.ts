@@ -1,4 +1,4 @@
-import type { Db } from './db';
+import type { Db } from './db.js';
 import type { Context } from 'hono';
 
 export type Role = 'customer' | 'courier' | 'admin' | 'super_admin';
