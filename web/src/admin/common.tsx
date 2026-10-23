@@ -19,7 +19,7 @@ export async function download(api: Api, path: string, filename?: string) {
 
 export function Table({ head, rows, empty = 'Sem resultados.' }: { head: string[]; rows: ReactNode[][]; empty?: string }) {
   return (
-    <div className="table-wrap">
+    <div className="table-wrap table-cards">
       <table>
         <thead>
           <tr>
@@ -39,7 +39,9 @@ export function Table({ head, rows, empty = 'Sem resultados.' }: { head: string[
             rows.map((r, i) => (
               <tr key={i}>
                 {r.map((c, j) => (
-                  <td key={j}>{c}</td>
+                  <td key={j} data-label={head[j]}>
+                    {c}
+                  </td>
                 ))}
               </tr>
             ))
