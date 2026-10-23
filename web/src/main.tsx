@@ -1,6 +1,7 @@
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
+import { Icon, Logo } from './shared/brand';
 import { Loading } from './shared/ui';
 import './styles.css';
 
@@ -36,21 +37,37 @@ function Legal({ kind }: { kind: 'termos' | 'privacidade' }) {
   );
 }
 
+const AREAS = [
+  { to: '/cliente', icon: 'box', title: 'Cliente', text: 'Envie encomendas, pague e acompanhe no mapa.', cta: 'Enviar uma encomenda' },
+  { to: '/estafeta', icon: 'scooter', title: 'Estafeta', text: 'Aceite pedidos, faça entregas e veja os seus ganhos.', cta: 'Entrar como estafeta' },
+  { to: '/admin', icon: 'dashboard', title: 'Admin', text: 'Gestão da plataforma: encomendas, estafetas, tarifas e relatórios.', cta: 'Abrir o painel' },
+] as const;
+
 function Landing() {
   return (
-    <div className="welcome">
-      <img src="/icon.svg" alt="" width={88} height={88} />
-      <h1>LevaGo</h1>
-      <p className="slogan">A tua entrega, o nosso compromisso!</p>
-      <Link className="btn btn-primary" to="/cliente">
-        Enviar uma encomenda
-      </Link>
-      <Link className="btn btn-secondary" to="/estafeta">
-        Sou estafeta
-      </Link>
-      <Link className="small" to="/admin">
-        Painel administrativo
-      </Link>
+    <div className="landing">
+      <header className="landing-hero">
+        <Logo size={48} light slogan />
+        <p>Entregas rápidas e seguras em Quelimane, de bicicleta ou motorizada.</p>
+      </header>
+      <main className="landing-areas">
+        <h2>Escolha a sua área</h2>
+        {AREAS.map((a) => (
+          <Link key={a.to} to={a.to} className={`area-card area-${a.title.toLowerCase()}`}>
+            <span className="area-icon">
+              <Icon name={a.icon} size={30} />
+            </span>
+            <span className="area-text">
+              <strong>{a.title}</strong>
+              <small>{a.text}</small>
+            </span>
+            <span className="area-cta">{a.cta} →</span>
+          </Link>
+        ))}
+        <p className="small center">
+          <Link to="/termos">Termos</Link> · <Link to="/privacidade">Privacidade</Link>
+        </p>
+      </main>
     </div>
   );
 }

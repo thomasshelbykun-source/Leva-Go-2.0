@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Avatar, Icon, Logo } from '../shared/brand';
 import { useConfig } from '../shared/config';
 import { dateTime, mt, SERVICE, WEEKDAYS } from '../shared/format';
 import { useSession } from '../shared/session';
@@ -11,27 +12,29 @@ import {
 export function Welcome() {
   const cfg = useConfig();
   return (
-    <div className="welcome">
-      <img src="/icon.svg" alt="" width={88} height={88} />
-      <h1>LevaGo</h1>
-      <p className="slogan">A tua entrega, o nosso compromisso!</p>
-      <ul className="bullets">
-        <li>Entregas em Quelimane, de bicicleta ou motorizada.</li>
-        <li>Até 15 kg e 15 km por estrada.</li>
-        <li>Preço claro antes de confirmar. Acompanhe no mapa.</li>
-      </ul>
-      {cfg && (
-        <p className="small">
-          Horário: {cfg.hours.map((h) => `${WEEKDAYS[h.weekday]!.slice(0, 3)} ${h.opens_at}–${h.closes_at}`).join(' · ')}
+    <div className="welcome-hero">
+      <div className="welcome-top">
+        <Logo size={46} light slogan />
+      </div>
+      <div className="welcome-bottom">
+        <h2>Entregas rápidas e seguras em Quelimane!</h2>
+        <ul className="bullets">
+          <li>De bicicleta ou motorizada, até 15 kg e 15 km por estrada.</li>
+          <li>Preço claro antes de confirmar. Acompanhe no mapa.</li>
+        </ul>
+        {cfg && (
+          <p className="small">
+            Horário: {cfg.hours.map((h) => `${WEEKDAYS[h.weekday]!.slice(0, 3)} ${h.opens_at}-${h.closes_at}`).join(' · ')}
+          </p>
+        )}
+        <ButtonLink to="/cliente/registo">Criar conta</ButtonLink>
+        <ButtonLink to="/cliente/entrar" kind="outline">
+          Entrar
+        </ButtonLink>
+        <p className="small center">
+          <Icon name="pin" size={16} /> Quelimane, Moçambique · <Link to="/">Mudar de área</Link>
         </p>
-      )}
-      <ButtonLink to="/cliente/registo">Criar conta</ButtonLink>
-      <ButtonLink to="/cliente/entrar" kind="secondary">
-        Já tenho conta
-      </ButtonLink>
-      <Link className="small" to="/estafeta">
-        Quero ser estafeta
-      </Link>
+      </div>
     </div>
   );
 }
@@ -46,15 +49,28 @@ export function Home() {
       <Loaded q={q}>
         {(h) => (
           <div className="stack">
-            <h2>Olá, {String(h.name).split(' ')[0]}!</h2>
-            {cfg && !cfg.open_now && <Notice tone="warn">Estamos fora do horário. Pode agendar uma entrega.</Notice>}
-            <Link to="/cliente/nova" className="hero">
-              <span>📦</span>
+            <div className="greet">
+              <Avatar name={h.name} />
               <div>
-                <strong>Enviar encomenda</strong>
-                <small>Escolha recolha e entrega e veja o preço.</small>
+                <h2>Olá, {String(h.name).split(' ')[0]}!</h2>
+                <small>Cliente LevaGo · Quelimane</small>
               </div>
+            </div>
+            {cfg && !cfg.open_now && <Notice tone="warn">Estamos fora do horário. Pode agendar uma entrega.</Notice>}
+            <Link to="/cliente/nova" className="action-big">
+              <Icon name="box" size={26} /> Solicitar entrega
             </Link>
+            <Link to={h.active_order ? `/cliente/encomendas/${h.active_order.id}` : '/cliente/encomendas'} className="action-big action-light">
+              <Icon name="search" size={24} /> Acompanhar entrega
+            </Link>
+            <div className="grid-2">
+              <Link to="/cliente/encomendas" className="tile">
+                <Icon name="list" /> Minhas encomendas
+              </Link>
+              <Link to="/cliente/planos" className="tile">
+                <Icon name="tag" /> Planos de subscrição
+              </Link>
+            </div>
             {h.active_order && (
               <Card onClick={() => (location.href = `/cliente/encomendas/${h.active_order.id}`)}>
                 <small>Encomenda em curso</small>
@@ -77,13 +93,9 @@ export function Home() {
                 <p className="small">Veja os planos de subscrição.</p>
               </Card>
             )}
-            <div className="grid-2">
-              <ButtonLink to="/cliente/encomendas" kind="secondary">
-                Minhas encomendas
-              </ButtonLink>
-              <ButtonLink to="/cliente/notificacoes" kind="secondary">
-                Notificações {h.unread_notifications ? `(${h.unread_notifications})` : ''}
-              </ButtonLink>
+            <div className="promo">
+              <strong>Entregas rápidas em toda Quelimane!</strong>
+              <small>Normal ou expressa, com preço claro antes de confirmar.</small>
             </div>
           </div>
         )}

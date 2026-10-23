@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Avatar, Icon, Logo } from '../shared/brand';
 import { CATEGORIES, dateTime, km, lbl, mt, SERVICE } from '../shared/format';
 import { MapView, type MapMarker } from '../shared/map';
 import { useSession } from '../shared/session';
@@ -15,19 +16,26 @@ const st = (s: string) => <Badge tone={STATE[s]?.[1]}>{STATE[s]?.[0] ?? s}</Badg
 
 export function CourierWelcome() {
   return (
-    <div className="welcome">
-      <img src="/icon.svg" alt="" width={88} height={88} />
-      <h1>LevaGo Estafeta</h1>
-      <p className="slogan">Faça entregas em Quelimane, de bicicleta ou motorizada.</p>
-      <ul className="bullets">
-        <li>Registe-se e envie os documentos.</li>
-        <li>A equipa LevaGo verifica e aprova a sua conta.</li>
-        <li>Fique online no horário de serviço e aceite pedidos.</li>
-      </ul>
-      <ButtonLink to="/estafeta/registo">Candidatar-me</ButtonLink>
-      <ButtonLink to="/estafeta/entrar" kind="secondary">
-        Já tenho conta
-      </ButtonLink>
+    <div className="welcome-hero">
+      <div className="welcome-top">
+        <Logo size={46} light />
+        <p className="welcome-sub">Aplicação do Estafeta</p>
+      </div>
+      <div className="welcome-bottom">
+        <h2>Faz parte da LevaGo</h2>
+        <ul className="bullets">
+          <li>Entregas, ganhos e liberdade.</li>
+          <li>Escolhe os teus horários dentro do horário de serviço.</li>
+          <li>Recebe pedidos na tua zona e aumenta os teus ganhos.</li>
+        </ul>
+        <ButtonLink to="/estafeta/entrar">Entrar</ButtonLink>
+        <ButtonLink to="/estafeta/registo" kind="outline">
+          Quero ser estafeta
+        </ButtonLink>
+        <p className="small center">
+          <Link to="/">Mudar de área</Link>
+        </p>
+      </div>
     </div>
   );
 }
@@ -190,6 +198,13 @@ export function CourierHome() {
   return (
     <Page title="Início">
       <div className="stack">
+        <div className="greet">
+          <Avatar name={m.name} />
+          <div>
+            <h2>Olá, {String(m.name).split(' ')[0]}!</h2>
+            <span className={`badge ${online ? 'badge-ok' : 'badge-muted'}`}>{online ? 'Online' : 'Offline'}</span>
+          </div>
+        </div>
         <Card className={online ? 'online-card on' : 'online-card'}>
           <div className="row-between">
             <div>
@@ -216,6 +231,20 @@ export function CourierHome() {
             <small>Entregas hoje</small>
             <div className="price">{m.today.deliveries}</div>
           </Card>
+        </div>
+        <div className="grid-2">
+          <Link to="/estafeta/ganhos" className="tile">
+            <Icon name="wallet" /> Meus ganhos
+          </Link>
+          <Link to="/estafeta/veiculo" className="tile">
+            <Icon name="scooter" /> Meu veículo
+          </Link>
+          <Link to="/estafeta/historico" className="tile">
+            <Icon name="clock" /> Histórico
+          </Link>
+          <Link to="/estafeta/apoio" className="tile">
+            <Icon name="chat" /> Suporte
+          </Link>
         </div>
         {(active.data ?? []).length > 0 && (
           <div className="stack">

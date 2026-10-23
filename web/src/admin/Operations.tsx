@@ -13,7 +13,7 @@ export function Dashboard() {
   const [to, setTo] = useState(todayMaputo());
   const q = useLoad(() => api.get(`/admin/dashboard?from=${from}&to=${to}`), [from, to], 60_000);
   return (
-    <Page title="Painel" wide actions={<DateRange from={from} to={to} setFrom={setFrom} setTo={setTo} />}>
+    <Page title="Dashboard" wide actions={<DateRange from={from} to={to} setFrom={setFrom} setTo={setTo} />}>
       <Loaded q={q}>
         {(d) => (
           <div className="stack">

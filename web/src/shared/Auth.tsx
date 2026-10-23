@@ -2,16 +2,26 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button, ErrorBox, Field, Notice, useAction } from './ui';
 import { useSession } from './session';
+import { Logo } from './brand';
 
-const TITLES = { cliente: 'LevaGo', estafeta: 'LevaGo Estafeta', admin: 'LevaGo Admin' } as const;
+const AREA = { cliente: 'Cliente', estafeta: 'Estafeta', admin: 'Admin' } as const;
 
-function Brand() {
-  const s = useSession();
+function Brand({ title }: { title: string }) {
   return (
     <div className="brand">
-      <img src="/icon.svg" alt="" width={56} height={56} />
-      <h1>{TITLES[s.app]}</h1>
+      <Logo size={34} />
+      <h1>{title}</h1>
     </div>
+  );
+}
+
+/** Mostra em que área a pessoa está e deixa mudar de área sem confusão. */
+function AreaSwitch() {
+  const s = useSession();
+  return (
+    <p className="small center area-switch">
+      Está na área <strong>{AREA[s.app]}</strong> · <Link to="/">Mudar de área</Link>
+    </p>
   );
 }
 
@@ -30,26 +40,53 @@ export function Login() {
       nav(loc.state?.from ?? s.base, { replace: true });
     }
   };
-  return (
-    <div className="auth">
-      <Brand />
-      <form className="card stack" onSubmit={submit}>
-        <h2>Entrar</h2>
-        <Field label="Telemóvel" hint="Ex.: 84 123 4567">
-          <input inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+  const admin = s.app === 'admin';
+  const form = (
+    <form className="card stack" onSubmit={submit}>
+      {admin ? (
+        <div className="brand">
+          <Logo size={34} />
+          <h1>Painel Administrativo</h1>
+          <small>Gestão da LevaGo</small>
+        </div>
+      ) : (
+        <Brand title={s.app === 'estafeta' ? 'Entrar como estafeta' : 'Entrar na tua conta'} />
+      )}
+      {admin ? (
+        <Field label="Email ou telemóvel">
+          <input autoComplete="username" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="admin@levago.co.mz" required />
         </Field>
+      ) : (
+        <Field label="Número de telefone" hint="Ex.: 84 123 4567">
+          <input inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+258 8X XXX XXXX" required />
+        </Field>
+      )}
         <Field label="Palavra-passe">
           <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </Field>
-        <ErrorBox error={a.error} />
-        <Button busy={a.busy}>Entrar</Button>
-        <div className="row-between small">
-          <Link to={`${s.base}/recuperar`}>Esqueci a palavra-passe</Link>
-          {s.app !== 'admin' && <Link to={`${s.base}/registo`}>Criar conta</Link>}
-        </div>
-      </form>
-    </div>
+      <ErrorBox error={a.error} />
+      <Button busy={a.busy}>Entrar</Button>
+      <Link className="small center" to={`${s.base}/recuperar`}>
+        Esqueceu a palavra-passe?
+      </Link>
+      {!admin && (
+        <p className="small center">
+          Ainda não tem conta? <Link to={`${s.base}/registo`}>Registar</Link>
+        </p>
+      )}
+      <AreaSwitch />
+    </form>
   );
+  if (admin)
+    return (
+      <div className="admin-login">
+        {form}
+        <div className="admin-login-art" aria-hidden="true">
+          <Logo size={56} light slogan />
+        </div>
+      </div>
+    );
+  return <div className="auth">{form}</div>;
 }
 
 export function Register() {
@@ -65,7 +102,6 @@ export function Register() {
   if (ver) {
     return (
       <div className="auth">
-        <Brand />
         <form
           className="card stack"
           onSubmit={async (e) => {
@@ -77,7 +113,7 @@ export function Register() {
             }
           }}
         >
-          <h2>Confirmar telemóvel</h2>
+          <Brand title="Confirmar telemóvel" />
           <p>Enviámos um código de 6 dígitos por SMS para {f.phone}.</p>
           {ver.dev_code && <Notice tone="warn">Ambiente de teste: o código é {ver.dev_code}</Notice>}
           <Field label="Código">
@@ -97,7 +133,6 @@ export function Register() {
 
   return (
     <div className="auth">
-      <Brand />
       <form
         className="card stack"
         onSubmit={async (e) => {
@@ -106,7 +141,7 @@ export function Register() {
           if (r) setVer(r);
         }}
       >
-        <h2>{s.app === 'estafeta' ? 'Registo de estafeta' : 'Criar conta'}</h2>
+        <Brand title={s.app === 'estafeta' ? 'Criar conta de estafeta' : 'Criar conta'} />
         <Field label="Nome completo" error={fieldErr('name')}>
           <input autoComplete="name" value={f.name} onChange={set('name')} required />
         </Field>
@@ -132,6 +167,7 @@ export function Register() {
         <p className="small center">
           Já tem conta? <Link to={`${s.base}/entrar`}>Entrar</Link>
         </p>
+        <AreaSwitch />
       </form>
     </div>
   );
@@ -148,9 +184,8 @@ export function ResetPassword() {
   const a = useAction();
   return (
     <div className="auth">
-      <Brand />
       <div className="card stack">
-        <h2>Recuperar acesso</h2>
+        <Brand title="Recuperar acesso" />
         {done ? (
           <>
             <Notice tone="ok">Palavra-passe alterada. Todas as sessões antigas foram terminadas.</Notice>

@@ -1,4 +1,5 @@
 import { NavLink, Outlet, Route, Routes } from 'react-router-dom';
+import { Icon, type IconName } from '../shared/brand';
 import { Login, Register, ResetPassword } from '../shared/Auth';
 import { RequireAuth, SessionProvider } from '../shared/session';
 import { Navigate } from 'react-router-dom';
@@ -8,6 +9,13 @@ import { Home, Notifications, Orders, Plans, Profile, Support, Welcome } from '.
 import { Receipt, Track } from './Track';
 
 const BASE = '/cliente';
+const TABS: [string, IconName, string][] = [
+  [BASE, 'home', 'Início'],
+  [`${BASE}/encomendas`, 'list', 'Pedidos'],
+  [`${BASE}/planos`, 'shield', 'Subscrição'],
+  [`${BASE}/notificacoes`, 'bell', 'Notificações'],
+  [`${BASE}/perfil`, 'user', 'Perfil'],
+];
 
 function Shell() {
   return (
@@ -16,21 +24,12 @@ function Shell() {
         <Outlet />
       </main>
       <nav className="bottom-nav" aria-label="Navegação">
-        <NavLink to={BASE} end>
-          <span>🏠</span>Início
-        </NavLink>
-        <NavLink to={`${BASE}/nova`}>
-          <span>➕</span>Enviar
-        </NavLink>
-        <NavLink to={`${BASE}/encomendas`}>
-          <span>📦</span>Encomendas
-        </NavLink>
-        <NavLink to={`${BASE}/notificacoes`}>
-          <span>🔔</span>Avisos
-        </NavLink>
-        <NavLink to={`${BASE}/perfil`}>
-          <span>👤</span>Perfil
-        </NavLink>
+        {TABS.map(([to, icon, label]) => (
+          <NavLink key={to} to={to} end={to === BASE}>
+            <Icon name={icon} />
+            {label}
+          </NavLink>
+        ))}
       </nav>
     </div>
   );

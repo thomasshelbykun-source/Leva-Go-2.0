@@ -1,6 +1,6 @@
 // Service worker simples: guarda a "casca" da aplicação para abrir sem rede.
 // Os pedidos à API nunca são guardados em cache (dados pessoais e estados em tempo real).
-const CACHE = 'levago-shell-v1';
+const CACHE = 'levago-shell-v2';
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/index.html', '/icon.svg', '/manifest.webmanifest'])));
   self.skipWaiting();

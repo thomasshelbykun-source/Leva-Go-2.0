@@ -1,41 +1,51 @@
 import { NavLink, Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { Avatar, Icon, Logo, type IconName } from '../shared/brand';
 import { Login, ResetPassword } from '../shared/Auth';
 import { RequireAuth, SessionProvider, useSession } from '../shared/session';
 import { Pricing, Payments, Reports, Settings, Subscriptions, TicketDetail, Tickets, Zones } from './Business';
 import { AdminOrderDetail, AdminOrders, CourierDetail, Couriers, CustomerDetail, Customers, Dashboard } from './Operations';
 
 const BASE = '/admin';
-const MENU: [string, string][] = [
-  ['', 'Painel'], ['encomendas', 'Encomendas'], ['clientes', 'Clientes'], ['estafetas', 'Estafetas'], ['subscricoes', 'Subscrições'], ['pagamentos', 'Pagamentos'],
-  ['tarifas', 'Tarifas'], ['zonas', 'Zonas'], ['suporte', 'Apoio'], ['relatorios', 'Relatórios'], ['definicoes', 'Definições'],
+const MENU: [string, IconName, string][] = [
+  ['', 'dashboard', 'Dashboard'], ['clientes', 'users', 'Clientes'], ['estafetas', 'scooter', 'Estafetas'], ['encomendas', 'box', 'Encomendas'],
+  ['subscricoes', 'shield', 'Subscrições'], ['pagamentos', 'card', 'Pagamentos'], ['tarifas', 'tag', 'Tarifas'], ['zonas', 'map', 'Zonas e cobertura'],
+  ['suporte', 'chat', 'Reclamações'], ['relatorios', 'chart', 'Relatórios'], ['definicoes', 'gear', 'Configurações'],
 ];
 
 function Shell() {
   const s = useSession();
+  const role = s.me?.roles.includes('super_admin') ? 'Super administrador' : 'Administrador';
   return (
     <div className="admin-shell">
       <aside>
-        <div className="brand small-brand">
-          <img src="/icon.svg" alt="" width={32} height={32} />
-          <strong>LevaGo Admin</strong>
-        </div>
+        <Logo size={26} light />
         <nav>
-          {MENU.map(([p, l]) => (
+          {MENU.map(([p, icon, l]) => (
             <NavLink key={p} to={`${BASE}/${p}`} end={p === ''}>
+              <Icon name={icon} size={19} />
               {l}
             </NavLink>
           ))}
         </nav>
-        <div className="aside-foot">
-          <small>{s.me?.name}</small>
-          <button className="link" onClick={() => s.signOut()}>
-            Sair
-          </button>
-        </div>
+        <button className="aside-out" onClick={() => s.signOut()}>
+          <Icon name="logout" size={19} /> Sair
+        </button>
       </aside>
-      <main>
-        <Outlet />
-      </main>
+      <div className="admin-main">
+        <header className="admin-top">
+          <span className="admin-top-title">Painel administrativo</span>
+          <div className="admin-user">
+            <Avatar name={s.me?.name} />
+            <div>
+              <strong>{s.me?.name}</strong>
+              <small>{role}</small>
+            </div>
+          </div>
+        </header>
+        <main>
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

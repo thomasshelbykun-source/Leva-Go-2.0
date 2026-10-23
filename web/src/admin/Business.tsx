@@ -271,7 +271,7 @@ export function Zones() {
     }
   };
   return (
-    <Page title="Zonas de cobertura" wide>
+    <Page title="Zonas e cobertura" wide>
       <Loaded q={q}>
         {(zones) => (
           <div className="grid-main">
@@ -477,7 +477,7 @@ export function Settings() {
   const audit = useLoad(() => (tab === 'auditoria' ? api.get<any[]>('/admin/audit') : Promise.resolve([])), [tab]);
   const isSuper = me?.roles.includes('super_admin');
   return (
-    <Page title="Definições" wide>
+    <Page title="Configurações do sistema" wide>
       <Tabs value={tab} onChange={setTab} options={[['geral', 'Geral'], ['horario', 'Horário'], ['admins', 'Administradores'], ['auditoria', 'Auditoria']]} />
       <Loaded q={q}>
         {(d) => (

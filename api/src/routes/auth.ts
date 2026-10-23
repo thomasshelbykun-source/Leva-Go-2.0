@@ -77,15 +77,21 @@ auth.post('/register/verify', async (c) => {
 
 auth.post('/login', async (c) => {
   const body = need<{ phone: string; password: string; app: AppName }>(await c.req.json(), {
-    phone: v.str(6, 20),
+    phone: v.str(3, 120),
     password: v.str(1, 128),
     app: v.oneOf('cliente', 'estafeta', 'admin'),
   });
-  const phone = normalizePhone(body.phone);
-  const neutral = new ApiError(401, 'credenciais_invalidas', 'Telefone ou palavra-passe incorrectos.');
-  if (!phone) throw neutral;
-  await rateLimit(c.env.DB, `login:${phone}`, 10, 15);
-  const u = await one<{ id: string; name: string; phone: string; password_hash: string; status: string; locked_until: string | null }>(c.env.DB, 'SELECT * FROM users WHERE phone = ?', phone);
+  // O campo aceita o telemóvel ou, para quem o registou, o email.
+  const byEmail = body.phone.includes('@');
+  const login = byEmail ? body.phone.trim().toLowerCase() : normalizePhone(body.phone);
+  const neutral = new ApiError(401, 'credenciais_invalidas', byEmail ? 'Email ou palavra-passe incorrectos.' : 'Telefone ou palavra-passe incorrectos.');
+  if (!login) throw neutral;
+  await rateLimit(c.env.DB, `login:${login}`, 10, 15);
+  const u = await one<{ id: string; name: string; phone: string; password_hash: string; status: string; locked_until: string | null }>(
+    c.env.DB,
+    byEmail ? 'SELECT * FROM users WHERE lower(email) = ?' : 'SELECT * FROM users WHERE phone = ?',
+    login,
+  );
   if (!u || u.status === 'deleted') throw neutral;
   if (u.locked_until && u.locked_until > nowIso()) throw new ApiError(429, 'conta_bloqueada', 'Conta bloqueada temporariamente por tentativas falhadas. Tente mais tarde.');
   if (!(await verifyPassword(body.password, u.password_hash))) {
@@ -100,7 +106,9 @@ auth.post('/login', async (c) => {
   if (u.status === 'suspended') throw new ApiError(403, 'conta_suspensa', 'A conta está suspensa. Contacte o apoio LevaGo.');
   const roles = (await c.env.DB.prepare('SELECT role FROM user_roles WHERE user_id = ?').bind(u.id).all<{ role: Role }>()).results.map((r) => r.role);
   // O estafeta entra com qualquer conta; a app mostra o estado da candidatura. Admin precisa do papel.
-  if (body.app === 'admin' && !APP_ROLES.admin.some((r) => roles.includes(r))) throw neutral;
+  // A palavra-passe já está certa, por isso podemos dizer claramente porque não entra.
+  if (body.app === 'admin' && !APP_ROLES.admin.some((r) => roles.includes(r)))
+    throw new ApiError(403, 'sem_acesso_admin', 'Esta conta não tem acesso ao painel administrativo. Use a área de Cliente ou de Estafeta.');
   await run(c.env.DB, 'UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?', u.id);
   if (body.app === 'admin') await c.env.DB.batch([auditStmt(c.env.DB, { id: u.id, role: 'admin' }, 'login', 'session', null)]);
   const session = await createSession(c.env.DB, u.id, body.app);

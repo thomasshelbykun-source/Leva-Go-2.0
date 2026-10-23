@@ -70,7 +70,7 @@ async function main() {
     ok((await api('POST', '/admin/admins', { token: admin2Token, body: { phone: '841000002', role: 'super_admin', grant: true, reason: 'auto' } })).status === 403, 'admin não se atribui privilégios');
 
     const cli = await register('Carla Cliente', '842000001');
-    ok((await api('POST', '/auth/login', { body: { phone: '842000001', password: 'segredo123', app: 'admin' } })).status === 401, 'cliente não entra no painel admin');
+    ok((await api('POST', '/auth/login', { body: { phone: '842000001', password: 'segredo123', app: 'admin' } })).status === 403, 'cliente não entra no painel admin');
     ok((await api('GET', '/admin/orders', { token: cli.token })).status === 403, 'cliente não acede a rotas admin');
     const dup = await api('POST', '/auth/register/start', { body: { name: 'Xavier', phone: '842000001', password: 'segredo123', consent_terms: true, consent_privacy: true, app: 'cliente' } });
     ok(dup.status === 200 && !dup.data.dev_code, 'registo duplicado não revela a conta nem envia código');

@@ -1,10 +1,18 @@
 import { Link, Navigate, NavLink, Outlet, Route, Routes } from 'react-router-dom';
+import { Icon, type IconName } from '../shared/brand';
 import { Notifications, Profile, Support } from '../cliente/Screens';
 import { Login, Register, ResetPassword } from '../shared/Auth';
 import { RequireAuth, SessionProvider } from '../shared/session';
 import { Apply, CourierHome, CourierWelcome, Earnings, History, Task, Vehicle } from './Screens';
 
 const BASE = '/estafeta';
+const TABS: [string, IconName, string][] = [
+  [BASE, 'home', 'Início'],
+  [`${BASE}/ganhos`, 'wallet', 'Ganhos'],
+  [`${BASE}/veiculo`, 'scooter', 'Veículo'],
+  [`${BASE}/notificacoes`, 'bell', 'Avisos'],
+  [`${BASE}/perfil`, 'user', 'Perfil'],
+];
 
 function Shell() {
   return (
@@ -13,21 +21,12 @@ function Shell() {
         <Outlet />
       </main>
       <nav className="bottom-nav" aria-label="Navegação">
-        <NavLink to={BASE} end>
-          <span>🛵</span>Pedidos
-        </NavLink>
-        <NavLink to={`${BASE}/historico`}>
-          <span>📋</span>Histórico
-        </NavLink>
-        <NavLink to={`${BASE}/ganhos`}>
-          <span>💰</span>Ganhos
-        </NavLink>
-        <NavLink to={`${BASE}/notificacoes`}>
-          <span>🔔</span>Avisos
-        </NavLink>
-        <NavLink to={`${BASE}/perfil`}>
-          <span>👤</span>Perfil
-        </NavLink>
+        {TABS.map(([to, icon, label]) => (
+          <NavLink key={to} to={to} end={to === BASE}>
+            <Icon name={icon} />
+            {label}
+          </NavLink>
+        ))}
       </nav>
     </div>
   );

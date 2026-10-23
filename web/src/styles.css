@@ -1,9 +1,10 @@
-/* LevaGo 2.0: cores da marca (especificação): azul-marinho #102B50 e laranja #FF8C00. */
+/* LevaGo 2.0: cores da marca, iguais às maquetas aprovadas: azul-marinho e laranja. */
 :root {
-  --navy: #102b50;
-  --orange: #ff8c00;
-  --orange-ink: #a85a00;
-  --bg: #f5f7fa;
+  --navy: #0d2a4f;
+  --navy-2: #163a66;
+  --orange: #f26a12;
+  --orange-ink: #b84d06;
+  --bg: #f3f5f9;
   --surface: #ffffff;
   --surface-2: #eef2f7;
   --text: #13213a;
@@ -20,7 +21,7 @@
   --radius: 14px;
   --shadow: 0 1px 2px rgb(16 43 80 / 6%), 0 4px 16px rgb(16 43 80 / 6%);
   color-scheme: light;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 16px;
   line-height: 1.45;
 }
@@ -99,7 +100,9 @@ input:disabled { opacity: 0.6; }
   font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; text-align: center;
 }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-primary { background: var(--orange); color: #1b1000; }
+.btn-primary { background: var(--orange); color: #fff; box-shadow: 0 2px 6px rgb(242 106 18 / 30%); }
+.btn-primary:hover:not(:disabled) { background: #df5d0a; }
+.btn-outline { background: transparent; color: #fff; border-color: rgb(255 255 255 / 75%); }
 .btn-secondary { background: var(--surface); color: var(--text); border-color: var(--line); }
 .btn-danger { background: var(--bad); color: #fff; }
 .btn-ghost { background: transparent; color: var(--text); }
@@ -164,6 +167,7 @@ input:disabled { opacity: 0.6; }
 .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .chip { border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 999px; padding: 0.45rem 0.85rem; font: inherit; font-size: 0.9rem; cursor: pointer; text-decoration: none; min-height: 38px; display: inline-flex; align-items: center; }
 .chip.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+.tab.active { color: var(--navy); }
 .chip:disabled { opacity: 0.45; cursor: not-allowed; }
 .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .list li { padding: 0.55rem 0; border-bottom: 1px solid var(--line); }
@@ -210,6 +214,7 @@ input:disabled { opacity: 0.6; }
 .msg.internal { border: 1px dashed var(--warn); }
 
 /* ---------------------------------------------------------------- Boas-vindas e autenticação */
+.auth { min-height: 100vh; justify-content: center; }
 .welcome, .auth { max-width: 440px; margin: 0 auto; padding: 2.5rem 1.25rem; display: flex; flex-direction: column; gap: 0.9rem; text-align: center; align-items: stretch; }
 .welcome img, .brand img { align-self: center; }
 .welcome h1 { font-size: 2rem; color: var(--navy); }
@@ -217,7 +222,9 @@ input:disabled { opacity: 0.6; }
 .bullets { text-align: left; color: var(--muted); padding-left: 1.2rem; margin: 0.5rem 0; }
 .auth .card { text-align: left; }
 .brand { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
-.brand h1 { color: var(--navy); }
+.brand h1 { color: var(--navy); font-size: 1.3rem; }
+.brand { text-align: center; margin-bottom: 0.3rem; }
+.area-switch { margin-top: 0.3rem; }
 :root[data-theme='dark'] .welcome h1, :root[data-theme='dark'] .brand h1 { color: #fff; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .welcome h1, :root:not([data-theme='light']) .brand h1 { color: #fff; } }
 
@@ -226,32 +233,112 @@ input:disabled { opacity: 0.6; }
 .hero small { color: #c7d3e6; display: block; }
 .online-card.on { border-color: var(--ok); background: color-mix(in srgb, var(--ok-bg) 60%, var(--surface)); }
 
+/* ---------------------------------------------------------------- Marca */
+.logo { display: inline-flex; flex-direction: column; align-items: center; gap: 0.25rem; }
+.logo-row { display: flex; align-items: center; gap: 0.15rem; }
+.logo-word { font-weight: 800; font-style: italic; letter-spacing: -0.02em; line-height: 1; }
+.logo-leva { color: var(--navy); }
+.logo-go { color: var(--orange); }
+.logo-light .logo-leva { color: #fff; }
+.logo-slogan { color: inherit; font-weight: 600; font-size: 0.82rem; }
+.logo-light .logo-slogan { color: #fff; }
+:root[data-theme='dark'] .logo:not(.logo-light) .logo-leva { color: #fff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .logo:not(.logo-light) .logo-leva { color: #fff; } }
+.icon { flex: none; }
+.avatar { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: var(--orange); color: #fff; font-weight: 700; flex: none; }
+
+/* ---------------------------------------------------------------- Página inicial (escolha de área) */
+.landing { min-height: 100vh; background: var(--bg); }
+.landing-hero { background: linear-gradient(160deg, var(--navy) 0%, var(--navy-2) 70%, #1d4b80 100%); color: #fff; padding: 2.5rem 1.25rem 4.5rem; display: flex; flex-direction: column; align-items: center; gap: 1rem; text-align: center; }
+.landing-hero p { color: #d5deeb; max-width: 420px; }
+.landing-areas { max-width: 960px; margin: -3rem auto 0; padding: 0 1rem 2rem; display: grid; gap: 0.9rem; }
+.landing-areas h2 { color: #fff; text-align: center; font-size: 1rem; font-weight: 600; }
+.area-card { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 0.9rem; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 1.1rem; text-decoration: none; color: var(--text); box-shadow: var(--shadow); border-top: 4px solid var(--orange); }
+.area-card:hover { border-color: var(--orange); transform: translateY(-1px); }
+.area-icon { grid-row: span 2; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 14px; background: color-mix(in srgb, var(--orange) 14%, var(--surface)); color: var(--orange); }
+.area-admin { border-top-color: var(--navy); }
+.area-admin .area-icon { background: color-mix(in srgb, var(--navy) 12%, var(--surface)); color: var(--navy); }
+.area-text { display: flex; flex-direction: column; gap: 0.15rem; }
+.area-text strong { font-size: 1.15rem; }
+.area-cta { color: var(--orange-ink); font-weight: 700; font-size: 0.92rem; }
+.area-admin .area-cta { color: var(--navy); }
+@media (min-width: 820px) { .landing-areas { grid-template-columns: repeat(3, 1fr); } .landing-areas h2, .landing-areas > p { grid-column: 1 / -1; } .area-card { grid-template-columns: 1fr; text-align: left; } .area-icon { grid-row: auto; } }
+
+/* ---------------------------------------------------------------- Boas-vindas (cliente e estafeta) */
+.welcome-hero { min-height: 100vh; display: flex; flex-direction: column; justify-content: space-between; background: radial-gradient(120% 70% at 50% 25%, #1f4f86 0%, var(--navy) 60%, #081b33 100%); color: #fff; padding: 2.5rem 1.25rem 1.5rem; }
+.welcome-top { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding-top: 2rem; }
+.welcome-sub { font-weight: 600; font-size: 1.05rem; }
+.welcome-bottom { max-width: 440px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 0.75rem; }
+.welcome-bottom h2 { text-align: center; font-size: 1.3rem; }
+.welcome-hero .bullets { color: #d5deeb; }
+.welcome-hero .small, .welcome-hero a { color: #d5deeb; }
+.welcome-hero .btn-primary { color: #fff; }
+.welcome-hero .small .icon { vertical-align: -3px; }
+
+/* ---------------------------------------------------------------- Início das aplicações */
+.greet { display: flex; align-items: center; gap: 0.75rem; }
+.greet h2 { font-size: 1.15rem; }
+.greet .badge { margin-top: 0.2rem; }
+.action-big { display: flex; align-items: center; justify-content: center; gap: 0.6rem; min-height: 58px; border-radius: 14px; background: var(--orange); color: #fff; font-weight: 700; font-size: 1.05rem; text-decoration: none; box-shadow: 0 3px 10px rgb(242 106 18 / 30%); }
+.action-light { background: var(--surface); color: var(--navy); border: 1px solid var(--line); box-shadow: var(--shadow); }
+:root[data-theme='dark'] .action-light { color: var(--text); }
+.tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4rem; min-height: 88px; padding: 0.7rem; text-align: center; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); color: var(--text); text-decoration: none; font-weight: 600; font-size: 0.9rem; box-shadow: var(--shadow); }
+.tile .icon { color: var(--navy); }
+.tile:hover { border-color: var(--orange); }
+.promo { border-radius: 16px; padding: 1.2rem; background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%); color: #fff; display: flex; flex-direction: column; gap: 0.3rem; }
+.promo strong { font-size: 1.15rem; }
+.promo small { color: #c7d3e6; }
+
+/* Cabeçalho azul das aplicações móveis, como nas maquetas. */
+.app-shell .page-head { position: sticky; top: 0; z-index: 400; margin: -1rem -1rem 0; padding: 0.6rem 1rem; background: var(--navy); color: #fff; border-radius: 0 0 18px 18px; }
+.app-shell .page-head h1 { font-size: 1.1rem; text-align: center; }
+.app-shell .page-head .btn-secondary { background: transparent; color: #fff; border-color: rgb(255 255 255 / 50%); }
+.app-shell .page-head .link { color: #fff; }
+
 /* ---------------------------------------------------------------- Navegação móvel */
 .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); z-index: 500; }
 .bottom-nav a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.1rem; padding: 0.45rem 0; font-size: 0.72rem; color: var(--muted); text-decoration: none; min-height: 56px; }
-.bottom-nav a span { font-size: 1.25rem; }
-.bottom-nav a.active { color: var(--orange-ink); font-weight: 700; }
+.bottom-nav a.active { color: var(--orange); font-weight: 700; }
+.bottom-nav { box-shadow: 0 -2px 12px rgb(13 42 79 / 8%); }
 
 /* ---------------------------------------------------------------- Painel Admin */
 .admin-shell { display: grid; grid-template-columns: 1fr; min-height: 100vh; }
-.admin-shell aside { background: var(--navy); color: #fff; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
-.admin-shell aside nav { display: flex; gap: 0.25rem; overflow-x: auto; }
-.admin-shell aside nav a { color: #d5deeb; text-decoration: none; padding: 0.5rem 0.75rem; border-radius: 8px; white-space: nowrap; }
-.admin-shell aside nav a.active { background: rgb(255 255 255 / 12%); color: #fff; font-weight: 700; box-shadow: inset 3px 0 0 var(--orange); }
-.admin-shell aside .link { color: var(--orange); }
-.small-brand { flex-direction: row; }
-.aside-foot { display: flex; justify-content: space-between; align-items: center; }
-.aside-foot small { color: #c7d3e6; }
+.admin-shell aside { background: var(--navy); color: #fff; padding: 1rem 0.75rem; display: flex; flex-direction: column; gap: 1rem; }
+.admin-shell aside > .logo { align-items: flex-start; padding: 0 0.5rem; }
+.admin-shell aside nav { display: flex; gap: 0.2rem; overflow-x: auto; }
+.admin-shell aside nav a { display: flex; align-items: center; gap: 0.65rem; color: #d5deeb; text-decoration: none; padding: 0.6rem 0.75rem; border-radius: 10px; white-space: nowrap; font-size: 0.93rem; }
+.admin-shell aside nav a:hover { background: rgb(255 255 255 / 8%); color: #fff; }
+.admin-shell aside nav a.active { background: var(--orange); color: #fff; font-weight: 700; }
+.aside-out { display: flex; align-items: center; gap: 0.65rem; background: none; border: 0; color: #d5deeb; font: inherit; padding: 0.6rem 0.75rem; cursor: pointer; border-radius: 10px; }
+.aside-out:hover { background: rgb(255 255 255 / 8%); color: #fff; }
+.admin-main { display: flex; flex-direction: column; min-width: 0; }
+.admin-top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.6rem 1.25rem; background: linear-gradient(90deg, var(--orange) 0%, #f5832f 100%); color: #fff; }
+.admin-top-title { font-weight: 700; letter-spacing: 0.02em; }
+.admin-user { display: flex; align-items: center; gap: 0.6rem; }
+.admin-user div { display: flex; flex-direction: column; line-height: 1.2; }
+.admin-user small { color: rgb(255 255 255 / 85%); }
+.admin-user .avatar { background: var(--navy); }
+@media (max-width: 600px) { .admin-user div { display: none; } }
 @media (min-width: 960px) {
-  .admin-shell { grid-template-columns: 230px 1fr; }
+  .admin-shell { grid-template-columns: 240px 1fr; }
   .admin-shell aside { position: sticky; top: 0; height: 100vh; }
-  .admin-shell aside nav { flex-direction: column; flex: 1; }
+  .admin-shell aside nav { flex-direction: column; flex: 1; overflow-y: auto; }
+}
+.admin-shell .page-head h1 { color: var(--navy); font-size: 1.45rem; }
+:root[data-theme='dark'] .admin-shell .page-head h1 { color: var(--text); }
+.admin-login { min-height: 100vh; display: grid; grid-template-columns: 1fr; background: var(--bg); }
+.admin-login > form { align-self: center; justify-self: center; width: min(420px, calc(100% - 2rem)); margin: 2rem 0; }
+.admin-login-art { display: none; }
+@media (min-width: 860px) {
+  .admin-login { grid-template-columns: minmax(380px, 1fr) 1.4fr; }
+  .admin-login-art { display: grid; place-items: center; background: radial-gradient(120% 80% at 30% 30%, #1f4f86 0%, var(--navy) 60%, #081b33 100%); }
 }
 .filters { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .filters > * { width: auto; min-width: 160px; flex: 1 1 160px; max-width: 320px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.75rem; }
-.stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.9rem; display: flex; flex-direction: column; gap: 0.2rem; }
-.stat strong { font-size: 1.45rem; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.9rem; display: flex; flex-direction: column; gap: 0.2rem; box-shadow: var(--shadow); }
+.stat { border-top: 3px solid var(--orange); }
+.stat strong { font-size: 1.45rem; color: var(--orange-ink); }
 .stat-ok strong { color: var(--ok); }
 .stat-warn strong { color: var(--warn); }
 .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
