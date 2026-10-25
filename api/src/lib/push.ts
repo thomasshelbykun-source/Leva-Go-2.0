@@ -70,7 +70,7 @@ export async function sendPush(db: Db, userId: string, msg: PushMessage): Promis
               TTL: '3600',
               Urgency: 'high',
             },
-            body: encryptPayload(Buffer.from(JSON.stringify(msg)), s.p256dh, s.auth),
+            body: new Uint8Array(encryptPayload(Buffer.from(JSON.stringify(msg)), s.p256dh, s.auth)),
             signal: AbortSignal.timeout(8000),
           });
           if (res.status === 404 || res.status === 410) await run(db, 'DELETE FROM push_subscriptions WHERE id = ?', s.id);

@@ -5,10 +5,10 @@ export type PushState = 'unsupported' | 'unavailable' | 'denied' | 'off' | 'on';
 
 const supported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 
-function keyBytes(b64: string): Uint8Array {
+function keyBytes(b64: string): Uint8Array<ArrayBuffer> {
   const pad = '='.repeat((4 - (b64.length % 4)) % 4);
   const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
-  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0)) as Uint8Array<ArrayBuffer>;
 }
 
 async function registration() {
