@@ -13,7 +13,7 @@ const MENU: [string, IconName, string][] = [
   ['suporte', 'chat', 'Reclamações'], ['relatorios', 'chart', 'Relatórios'], ['definicoes', 'gear', 'Configurações'],
 ];
 
-// No telemóvel, estas secções ficam na barra de baixo; as outras estão no menu.
+// No telemóvel, estas secções ficam na barra de baixo. As outras estão no menu.
 const QUICK: [string, IconName, string][] = [
   ['', 'dashboard', 'Dashboard'], ['encomendas', 'box', 'Encomendas'], ['estafetas', 'scooter', 'Estafetas'], ['clientes', 'users', 'Clientes'],
 ];
@@ -23,7 +23,7 @@ function Shell() {
   const loc = useLocation();
   const [open, setOpen] = useState(false);
   const role = s.me?.roles.includes('super_admin') ? 'Super administrador' : 'Administrador';
-  // Fecha o menu do telemóvel quando a pessoa muda de página.
+  // Fecha o menu ao mudar de página.
   useEffect(() => setOpen(false), [loc.pathname]);
   return (
     <div className={`admin-shell ${open ? 'menu-open' : ''}`}>
@@ -32,7 +32,7 @@ function Shell() {
         <div className="aside-head">
           <Logo size={26} light />
           <button className="icon-btn aside-close" aria-label="Fechar menu" onClick={() => setOpen(false)}>
-            ✕
+            <Icon name="close" size={18} />
           </button>
         </div>
         <nav>

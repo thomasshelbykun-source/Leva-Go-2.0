@@ -1,6 +1,8 @@
+import { waitUntil } from '@vercel/functions';
 import type { Db, Stmt } from './db.js';
 import { all, ApiError, forbidden, getSetting, nowIso, one, parseJson, run, uuid, type AppName, type AuthUser, type Ctx, type Env, type Role } from './core.js';
 import { randomToken, sha256 } from './crypto.js';
+import { sendPush } from './push.js';
 import { canTransition, courierEarning, STATUS_LABELS, type Actor, type HoursRow, type OrderStatus, type Zone } from './domain.js';
 
 // ------------------------------------------------------------------ Sessões
@@ -129,7 +131,9 @@ export async function transition(
   ];
   const msg = NOTIFY_CUSTOMER[to];
   if (msg) follow.push(notifyStmt(db, order.customer_id, `order:${order.id}:${to}`, 'encomenda', `${order.code}: ${STATUS_LABELS[to]}`, msg, order.id));
-  return guardedBatch(db, upd, follow);
+  const ok = await guardedBatch(db, upd, follow);
+  if (ok && msg) waitUntil(sendPush(db, order.customer_id, { title: `${order.code}: ${STATUS_LABELS[to]}`, body: msg, url: `/cliente/encomendas/${order.id}` }));
+  return ok;
 }
 
 /**

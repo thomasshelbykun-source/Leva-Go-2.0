@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Avatar, Icon, Logo } from '../shared/brand';
-import { CATEGORIES, dateTime, km, lbl, mt, SERVICE } from '../shared/format';
+import { PushCard } from '../shared/Alerts';
+import { Icon, Logo } from '../shared/brand';
+import { CATEGORIES, dateTime, km, lbl, mapsLink, mt, SERVICE } from '../shared/format';
 import { MapView, type MapMarker } from '../shared/map';
 import { useSession } from '../shared/session';
 import {
-  Badge, Button, ButtonLink, Card, Confirm, Empty, ErrorBox, Field, KV, Loaded, Notice, Page, StatusBadge, Tabs, Timeline, useAction, useLoad,
+  Badge, Button, ButtonLink, Card, Confirm, Empty, ErrorBox, Field, KV, Loaded, Notice, Page, StatusBadge, Switch, Tabs, Timeline, useAction, useLoad,
 } from '../shared/ui';
 
 const DOCS: Record<string, string> = { bi: 'Bilhete de identidade', carta_conducao: 'Carta de condução', livrete: 'Livrete', seguro: 'Seguro', foto: 'Fotografia', outro: 'Outro' };
@@ -22,11 +23,10 @@ export function CourierWelcome() {
         <p className="welcome-sub">Aplicação do Estafeta</p>
       </div>
       <div className="welcome-bottom">
-        <h2>Faz parte da LevaGo</h2>
+        <h2>Faça entregas com a LevaGo</h2>
         <ul className="bullets">
-          <li>Entregas, ganhos e liberdade.</li>
-          <li>Escolhe os teus horários dentro do horário de serviço.</li>
-          <li>Recebe pedidos na tua zona e aumenta os teus ganhos.</li>
+          <li>Escolha os seus horários dentro do horário de serviço.</li>
+          <li>Receba pedidos perto de si e veja os ganhos de cada dia.</li>
         </ul>
         <ButtonLink to="/estafeta/entrar">Entrar</ButtonLink>
         <ButtonLink to="/estafeta/registo" kind="outline">
@@ -195,94 +195,91 @@ export function CourierHome() {
     );
   }
   const online = !!m.profile.is_online;
+  const open = (id: string) => nav(`/estafeta/tarefa/${id}`);
   return (
     <Page title="Início">
       <div className="stack">
-        <div className="greet">
-          <Avatar name={m.name} />
+        <div className={`status-bar ${online ? 'on' : ''}`}>
           <div>
-            <h2>Olá, {String(m.name).split(' ')[0]}!</h2>
-            <span className={`badge ${online ? 'badge-ok' : 'badge-muted'}`}>{online ? 'Online' : 'Offline'}</span>
+            <strong>{online ? 'Está online' : 'Está offline'}</strong>
+            <small>{online ? 'A receber pedidos perto de si.' : 'Ligue para receber pedidos.'}</small>
+            <small>{m.vehicle ? `${lbl(m.vehicle.kind)} · até ${m.vehicle.capacity_kg} kg` : 'Sem veículo aprovado'}</small>
           </div>
+          <Switch
+            checked={online}
+            busy={toggle.busy}
+            label={online ? 'Ficar offline' : 'Ficar online'}
+            onChange={async () => (await toggle.run(() => api.post('/courier/availability', { online: !online }))) && me.reload(true)}
+          />
         </div>
-        <Card className={online ? 'online-card on' : 'online-card'}>
-          <div className="row-between">
-            <div>
-              <strong>{online ? 'Está online' : 'Está offline'}</strong>
-              <small>{m.vehicle ? `${lbl(m.vehicle.kind)} · até ${m.vehicle.capacity_kg} kg` : 'Sem veículo aprovado'}</small>
-            </div>
-            <Button
-              kind={online ? 'secondary' : 'primary'}
-              busy={toggle.busy}
-              onClick={async () => (await toggle.run(() => api.post('/courier/availability', { online: !online }))) && me.reload(true)}
-            >
-              {online ? 'Ficar offline' : 'Ficar online'}
-            </Button>
-          </div>
-          {!m.open_now && <small>{m.hours_message}</small>}
-          <ErrorBox error={toggle.error} />
-        </Card>
-        <div className="grid-2">
-          <Card>
+        {!m.open_now && <Notice tone="warn">{m.hours_message}</Notice>}
+        <ErrorBox error={toggle.error} />
+        <PushCard compact />
+        <div className="earn">
+          <div>
             <small>Ganhos de hoje</small>
-            <div className="price">{mt(m.today.earned_cents)}</div>
-          </Card>
-          <Card>
+            <strong>{mt(m.today.earned_cents)}</strong>
+          </div>
+          <div>
             <small>Entregas hoje</small>
-            <div className="price">{m.today.deliveries}</div>
-          </Card>
+            <strong>{m.today.deliveries}</strong>
+          </div>
         </div>
         <div className="grid-2">
           <Link to="/estafeta/ganhos" className="tile">
             <Icon name="wallet" /> Meus ganhos
           </Link>
-          <Link to="/estafeta/veiculo" className="tile">
-            <Icon name="scooter" /> Meu veículo
-          </Link>
           <Link to="/estafeta/historico" className="tile">
             <Icon name="clock" /> Histórico
-          </Link>
-          <Link to="/estafeta/apoio" className="tile">
-            <Icon name="chat" /> Suporte
           </Link>
         </div>
         {(active.data ?? []).length > 0 && (
           <div className="stack">
             <h3>Em curso</h3>
             {active.data!.map((o) => (
-              <Card key={o.id} onClick={() => nav(`/estafeta/tarefa/${o.id}`)}>
+              <div key={o.id} className="offer mine" role="button" tabIndex={0} onClick={() => open(o.id)} onKeyDown={(e) => e.key === 'Enter' && open(o.id)}>
                 <div className="row-between">
                   <strong>{o.code}</strong>
                   <StatusBadge status={o.status} label={o.status_label} />
                 </div>
-                <small className="ellipsis">{o.pickup?.text}</small>
-              </Card>
+                <div className="leg">
+                  <span className="mk a">A</span>
+                  <span className="ellipsis">{o.pickup?.text}</span>
+                </div>
+              </div>
             ))}
           </div>
         )}
         <h3>Pedidos disponíveis</h3>
         {!online ? (
-          <Empty title="Fique online para ver pedidos" />
+          <Empty icon="scooter" title="Fique online para ver pedidos" text="Ligue o interruptor no topo." />
         ) : (
           <Loaded q={avail}>
             {(d) =>
               d.items.length === 0 ? (
-                <Empty title="Sem pedidos agora" text="A lista actualiza sozinha." />
+                <Empty icon="clock" title="Sem pedidos agora" text="A lista actualiza sozinha." />
               ) : (
                 <div className="stack">
                   {d.items.map((o: any) => (
-                    <Card key={o.id} onClick={() => nav(`/estafeta/tarefa/${o.id}`)} className={o.offered_to_me ? 'selected' : ''}>
+                    <div key={o.id} className={`offer ${o.offered_to_me ? 'mine' : ''}`} role="button" tabIndex={0} onClick={() => open(o.id)} onKeyDown={(e) => e.key === 'Enter' && open(o.id)}>
                       <div className="row-between">
-                        <strong>
-                          {o.code} {o.service_type === 'expressa' && <Badge tone="warn">Expressa</Badge>} {o.offered_to_me && <Badge tone="info">Atribuído a si</Badge>}
-                        </strong>
-                        <strong>{mt(o.earning_cents)}</strong>
+                        <span className="amount">{mt(o.earning_cents)}</span>
+                        <span>
+                          {o.service_type === 'expressa' && <Badge tone="warn">Expressa</Badge>} {o.offered_to_me && <Badge tone="info">Para si</Badge>}
+                        </span>
                       </div>
-                      <small className="ellipsis">Recolha: {o.pickup.text}</small>
+                      <div className="leg">
+                        <span className="mk a">A</span>
+                        <span className="ellipsis">{o.pickup.text}</span>
+                      </div>
+                      <div className="leg">
+                        <span className="mk b">B</span>
+                        <span>{o.dropoff_area.area}</span>
+                      </div>
                       <small>
-                        Destino aproximado: {o.dropoff_area.area} · {km(o.road_distance_m)} · {o.weight_kg} kg
+                        {km(o.road_distance_m)} · {o.weight_kg} kg
                       </small>
-                    </Card>
+                    </div>
                   ))}
                 </div>
               )
@@ -356,6 +353,9 @@ export function Task() {
       <Loaded q={q}>
         {(o) => {
           const markers: MapMarker[] = [{ lat: o.pickup.lat, lon: o.pickup.lon, kind: 'pickup' }];
+          const going = o.mine && ['ACEITE', 'RECOLHIDO', 'EM_TRANSPORTE'].includes(o.status);
+          // A rota vai à recolha até recolher a encomenda. Depois vai à morada exacta de entrega.
+          const dest: { lat: number; lon: number } | null = o.status === 'ACEITE' ? o.pickup : o.recipient ? o.dropoff : null;
           markers.push({ lat: o.dropoff.lat, lon: o.dropoff.lon, kind: o.recipient ? 'dropoff' : 'area' });
           const checklist = (items: string[]) => (
             <div className="stack">
@@ -379,7 +379,28 @@ export function Task() {
                   <StatusBadge status={o.status} label={o.status_label} />
                 </div>
               </Card>
-              <MapView markers={markers} />
+              <MapView markers={markers} height={220} />
+              {going && (
+                <div className="stack">
+                  {dest && (
+                    <a className="btn btn-primary nav-btn" href={mapsLink(dest.lat, dest.lon)} target="_blank" rel="noopener noreferrer">
+                      <Icon name="navigate" size={18} /> Abrir rota no Google Maps
+                    </a>
+                  )}
+                  <div className="grid-2">
+                    {o.pickup.contact && (
+                      <a className="btn btn-secondary nav-btn" href={`tel:${o.pickup.contact}`}>
+                        <Icon name="phone" size={18} /> Ligar na recolha
+                      </a>
+                    )}
+                    {o.recipient && (
+                      <a className="btn btn-secondary nav-btn" href={`tel:${o.recipient.phone}`}>
+                        <Icon name="phone" size={18} /> Ligar ao destinatário
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
               <Card>
                 <KV
                   items={[
@@ -549,7 +570,7 @@ export function History() {
                   </div>
                   <div className="row-between small">
                     <span>{dateTime(o.updated_at)}</span>
-                    <span>{o.amount_cents != null ? mt(o.amount_cents) : '—'}</span>
+                    <span>{o.amount_cents != null ? mt(o.amount_cents) : '-'}</span>
                   </div>
                 </Card>
               ))}

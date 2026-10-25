@@ -1,4 +1,5 @@
 import { Link, Navigate, NavLink, Outlet, Route, Routes } from 'react-router-dom';
+import { PushCard } from '../shared/Alerts';
 import { Icon, type IconName } from '../shared/brand';
 import { Notifications, Profile, Support } from '../cliente/Screens';
 import { Login, Register, ResetPassword } from '../shared/Auth';
@@ -35,7 +36,8 @@ function Shell() {
 function CourierProfile() {
   return (
     <>
-      <div className="page">
+      <div className="page stack">
+        <PushCard />
         <Link className="btn btn-secondary" to={`${BASE}/veiculo`}>
           O meu veículo
         </Link>

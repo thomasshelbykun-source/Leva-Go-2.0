@@ -5,11 +5,12 @@ import {
   addMinutes, all, ApiError, bad, conflict, getSetting, need, normalizePhone, notFound, nowIso, one, parseJson, run, uuid, v,
   type Env, type Vars,
 } from '../lib/core.js';
-import { hashPassword, orderCode, randomDigits, sha256, verifyPassword } from '../lib/crypto.js';
+import { hashPassword, orderCode, randomDigits, randomToken, sha256, verifyPassword } from '../lib/crypto.js';
 import {
   checkRoadDistance, checkWeight, coverageFor, customerCanCancel, fitsBusinessHours, priceFor, slotsForDay, STATUS_LABELS,
   type OrderStatus, type PricingRule,
 } from '../lib/domain.js';
+import { pushEnabled, pushPublicKey } from '../lib/push.js';
 import { guardedBatch, loadHours, loadZones, notifyStmt, rateLimit, requireRole, transition, type OrderRow } from '../lib/services.js';
 
 const r = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -283,7 +284,8 @@ r.get('/orders', async (c) => {
   };
   const rows = await all(
     c.env.DB,
-    `SELECT id, code, status, price_cents, service_type, created_at, scheduled_at, dropoff_snapshot, pickup_snapshot
+    `SELECT id, code, status, price_cents, service_type, created_at, scheduled_at, dropoff_snapshot, pickup_snapshot,
+            EXISTS (SELECT 1 FROM ratings WHERE ratings.order_id = orders.id) AS rated
        FROM orders WHERE customer_id = ? ${where[filter] ?? ''} ORDER BY created_at DESC LIMIT 20 OFFSET ?`,
     u.id,
     (page - 1) * 20,
@@ -294,6 +296,20 @@ r.get('/orders', async (c) => {
 r.get('/orders/:id', async (c) => {
   const u = requireRole(c, 'customer');
   return c.json(await orderDetail(c.env.DB, c.req.param('id'), u.id));
+});
+
+/** Cria (ou devolve) o código do link público de seguimento, para partilhar por WhatsApp. */
+r.post('/orders/:id/share', async (c) => {
+  const u = requireRole(c, 'customer');
+  const o = await one<{ id: string; share_token: string | null; status: string }>(c.env.DB, 'SELECT id, share_token, status FROM orders WHERE id = ? AND customer_id = ?', c.req.param('id'), u.id);
+  if (!o) throw notFound('Encomenda não encontrada.');
+  let token = o.share_token;
+  if (!token) {
+    token = randomToken(16);
+    await run(c.env.DB, 'UPDATE orders SET share_token = ? WHERE id = ? AND share_token IS NULL', token, o.id);
+    token = (await one<{ share_token: string }>(c.env.DB, 'SELECT share_token FROM orders WHERE id = ?', o.id))!.share_token;
+  }
+  return c.json({ token });
 });
 
 r.post('/orders/:id/cancel', async (c) => {
@@ -519,6 +535,31 @@ r.post('/notifications/read', async (c) => {
   } else {
     await run(c.env.DB, 'UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL', nowIso(), u.id);
   }
+  return c.json({ ok: true });
+});
+
+// ------------------------------------------------------------------ Notificações push
+r.get('/push/key', (c) => c.json({ enabled: pushEnabled(), public_key: pushPublicKey() }));
+
+r.post('/push/subscribe', async (c) => {
+  const u = requireRole(c, 'customer', 'courier');
+  const b = (await c.req.json()) as { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } };
+  const endpoint = typeof b.endpoint === 'string' ? b.endpoint : '';
+  const p256dh = typeof b.keys?.p256dh === 'string' ? b.keys.p256dh : '';
+  const auth = typeof b.keys?.auth === 'string' ? b.keys.auth : '';
+  if (!/^https:\/\/[^\s]{10,500}$/.test(endpoint) || p256dh.length < 40 || p256dh.length > 120 || auth.length < 10 || auth.length > 40) throw bad('subscricao', 'Subscrição inválida.');
+  await run(
+    c.env.DB,
+    'INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth) VALUES (?,?,?,?,?) ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth',
+    uuid(), u.id, endpoint, p256dh, auth,
+  );
+  return c.json({ ok: true });
+});
+
+r.post('/push/unsubscribe', async (c) => {
+  const u = requireRole(c, 'customer', 'courier');
+  const b = (await c.req.json().catch(() => ({}))) as { endpoint?: unknown };
+  if (typeof b.endpoint === 'string') await run(c.env.DB, 'DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?', b.endpoint, u.id);
   return c.json({ ok: true });
 });
 

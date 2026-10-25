@@ -10,6 +10,7 @@ import auth from './routes/auth.js';
 import courier from './routes/courier.js';
 import customer from './routes/customer.js';
 import payments from './routes/payments.js';
+import publicRoutes from './routes/public.js';
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -110,6 +111,7 @@ app.route('/v1/auth', auth);
 app.route('/v1', customer);
 app.route('/v1/courier', courier);
 app.route('/v1/payments', payments);
+app.route('/v1/public', publicRoutes);
 app.route('/v1/admin', admin);
 
 app.notFound((c) => c.json({ error: 'nao_encontrado', message: 'Endereço inexistente.' }, 404));

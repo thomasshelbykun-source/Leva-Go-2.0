@@ -107,7 +107,7 @@ export function CustomerDetail() {
           <div className="stack">
             <Notice>O acesso a estes dados fica registado na auditoria.</Notice>
             <Card>
-              <KV items={[['Nome', c.name], ['Telemóvel', c.phone], ['Email', c.email ?? '—'], ['Estado', c.status], ['Papéis', c.roles.join(', ')], ['Registo', dateTime(c.created_at)]]} />
+              <KV items={[['Nome', c.name], ['Telemóvel', c.phone], ['Email', c.email ?? '-'], ['Estado', c.status], ['Papéis', c.roles.join(', ')], ['Registo', dateTime(c.created_at)]]} />
               <Button kind={c.status === 'active' ? 'danger' : 'primary'} onClick={() => setDlg(true)}>
                 {c.status === 'active' ? 'Suspender conta' : 'Reactivar conta'}
               </Button>
@@ -166,8 +166,8 @@ export function Couriers() {
               <Table
                 head={['Nome', 'Vínculo', 'Estado', 'Online', 'Veículo', 'Entregas', 'Avaliação', '']}
                 rows={d.couriers.map((c: any) => [
-                  c.name, lbl(c.link_type), lbl(c.status), c.is_online ? <Badge tone="ok">Online</Badge> : '—', c.vehicle ?? 'Sem veículo aprovado', c.delivered,
-                  c.rating_avg ? `${Number(c.rating_avg).toFixed(1)} (${c.rating_count})` : '—', <Link to={`/admin/estafetas/${c.user_id}`}>Abrir</Link>,
+                  c.name, lbl(c.link_type), lbl(c.status), c.is_online ? <Badge tone="ok">Online</Badge> : '-', c.vehicle ?? 'Sem veículo aprovado', c.delivered,
+                  c.rating_avg ? `${Number(c.rating_avg).toFixed(1)} (${c.rating_count})` : '-', <Link to={`/admin/estafetas/${c.user_id}`}>Abrir</Link>,
                 ])}
               />
             </Card>
@@ -199,9 +199,9 @@ export function CourierDetail() {
               <Card>
                 <KV
                   items={[
-                    ['Nome', d.user.name], ['Telemóvel', d.user.phone], ['Email', d.user.email ?? '—'],
+                    ['Nome', d.user.name], ['Telemóvel', d.user.phone], ['Email', d.user.email ?? '-'],
                     ['Vínculo', lbl(d.profile?.link_type)], ['Estado', lbl(d.profile?.status)], ['Online', d.profile?.is_online ? 'Sim' : 'Não'],
-                    ['Avaliação', d.profile?.rating_avg ? Number(d.profile.rating_avg).toFixed(2) : '—'],
+                    ['Avaliação', d.profile?.rating_avg ? Number(d.profile.rating_avg).toFixed(2) : '-'],
                   ]}
                 />
                 <div className="row-end wrap">
@@ -216,7 +216,7 @@ export function CourierDetail() {
                   <p className="small">Verifique os documentos e o veículo antes de aprovar. Quem se candidata não pode aprovar a própria candidatura.</p>
                   <Field label="Zona de trabalho (opcional)">
                     <select value={zone} onChange={(e) => setZone(e.target.value)}>
-                      <option value="">—</option>
+                      <option value="">-</option>
                       {(zones.data ?? []).filter((z) => z.kind === 'coverage').map((z) => (
                         <option key={z.id} value={z.id}>
                           {z.name}
@@ -249,7 +249,7 @@ export function CourierDetail() {
                 <Table
                   head={['Tipo', 'Matrícula', 'Capacidade', 'Propriedade', 'Estado', '']}
                   rows={d.vehicles.map((v: any) => [
-                    lbl(v.kind), v.plate ?? '—', `${v.capacity_kg} kg`, lbl(v.ownership), lbl(v.status),
+                    lbl(v.kind), v.plate ?? '-', `${v.capacity_kg} kg`, lbl(v.ownership), lbl(v.status),
                     <span className="row-end">
                       <button className="link" onClick={() => { setNum(String(v.capacity_kg)); setDlg({ title: 'Aprovar veículo', path: `/admin/vehicles/${v.id}/review`, body: { status: 'approved' }, extra: 'capacity' }); }}>Aprovar</button>
                       <button className="link danger" onClick={() => setDlg({ title: 'Rejeitar veículo', path: `/admin/vehicles/${v.id}/review`, body: { status: 'rejected' }, danger: true })}>Rejeitar</button>
@@ -338,7 +338,7 @@ export function AdminOrders() {
             <Table
               head={['Código', 'Estado', 'Cliente', 'Estafeta', 'Modalidade', 'Distância', 'Valor', 'Pagamento', 'Criado']}
               rows={d.items.map((o: any) => [
-                <Link to={`/admin/encomendas/${o.id}`}>{o.code}</Link>, <StatusBadge status={o.status} />, o.customer, o.courier ?? '—', SERVICE[o.service_type],
+                <Link to={`/admin/encomendas/${o.id}`}>{o.code}</Link>, <StatusBadge status={o.status} />, o.customer, o.courier ?? '-', SERVICE[o.service_type],
                 km(o.road_distance_m), mt(o.price_cents), `${PAY_METHOD[o.payment_method] ?? o.payment_method} · ${lbl(o.payment_status)}`, dateTime(o.created_at),
               ])}
             />
@@ -378,12 +378,12 @@ export function AdminOrderDetail() {
                 <KV
                   items={[
                     ['Cliente', <Link to={`/admin/clientes/${o.customer_id}`}>{o.customer}</Link>],
-                    ['Estafeta', o.courier ? <Link to={`/admin/estafetas/${o.assigned_courier_id}`}>{o.courier}</Link> : '—'],
+                    ['Estafeta', o.courier ? <Link to={`/admin/estafetas/${o.assigned_courier_id}`}>{o.courier}</Link> : '-'],
                     ['Recolha', o.pickup.text], ['Entrega', o.dropoff.text], ['Destinatário', `${o.recipient_name} · ${o.recipient_phone}`],
-                    ['Conteúdo', `${CATEGORIES[o.category] ?? o.category}: ${o.description}`], ['Observações', o.notes ?? '—'],
+                    ['Conteúdo', `${CATEGORIES[o.category] ?? o.category}: ${o.description}`], ['Observações', o.notes ?? '-'],
                     ['Peso', `${o.weight_kg} kg`], ['Distância por estrada', km(o.road_distance_m)], ['Modalidade', SERVICE[o.service_type]],
                     ['Valor', mt(o.price_cents)], ['Pagamento', `${PAY_METHOD[o.payment_method] ?? o.payment_method} · ${lbl(o.payment_status)}`],
-                    ['Agendado', o.scheduled_at ? dateTime(o.scheduled_at) : '—'], ['Tentativas de código', o.delivery_code_attempts],
+                    ['Agendado', o.scheduled_at ? dateTime(o.scheduled_at) : '-'], ['Tentativas de código', o.delivery_code_attempts],
                     ...(o.cancel_reason ? ([['Motivo cancelamento', o.cancel_reason]] as [string, string][]) : []),
                   ]}
                 />
@@ -401,7 +401,7 @@ export function AdminOrderDetail() {
               </Card>
               <Card>
                 <h3>Pagamentos</h3>
-                <Table head={['Método', 'Estado', 'Valor', 'Referência', 'Data']} rows={o.payments.map((p: any) => [PAY_METHOD[p.provider] ?? p.provider, lbl(p.status), mt(p.amount_cents), p.provider_ref ?? '—', dateTime(p.created_at)])} />
+                <Table head={['Método', 'Estado', 'Valor', 'Referência', 'Data']} rows={o.payments.map((p: any) => [PAY_METHOD[p.provider] ?? p.provider, lbl(p.status), mt(p.amount_cents), p.provider_ref ?? '-', dateTime(p.created_at)])} />
               </Card>
               <Card>
                 <h3>Provas</h3>

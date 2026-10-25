@@ -5,17 +5,18 @@ import { Icon, Logo } from './shared/brand';
 import { Loading } from './shared/ui';
 import './styles.css';
 
-// Cada aplicação carrega à parte: o cliente não descarrega o código do painel Admin.
+// Cada área carrega à parte, para o cliente não descarregar o código do Admin.
 const ClienteApp = lazy(() => import('./cliente/App'));
 const EstafetaApp = lazy(() => import('./estafeta/App'));
 const AdminApp = lazy(() => import('./admin/App'));
+const Seguir = lazy(() => import('./Seguir'));
 
 function Legal({ kind }: { kind: 'termos' | 'privacidade' }) {
   return (
     <div className="page">
       <header className="page-head">
         <button className="icon-btn" aria-label="Voltar" onClick={() => history.back()}>
-          ←
+          <Icon name="back" />
         </button>
         <h1>{kind === 'termos' ? 'Termos de utilização' : 'Política de privacidade'}</h1>
       </header>
@@ -38,7 +39,7 @@ function Legal({ kind }: { kind: 'termos' | 'privacidade' }) {
 }
 
 const AREAS = [
-  { to: '/cliente', icon: 'box', title: 'Cliente', text: 'Envie encomendas, pague e acompanhe no mapa.', cta: 'Enviar uma encomenda' },
+  { to: '/cliente', icon: 'box', title: 'Cliente', text: 'Envie encomendas, veja o preço e acompanhe no mapa.', cta: 'Enviar uma encomenda' },
   { to: '/estafeta', icon: 'scooter', title: 'Estafeta', text: 'Aceite pedidos, faça entregas e veja os seus ganhos.', cta: 'Entrar como estafeta' },
   { to: '/admin', icon: 'dashboard', title: 'Admin', text: 'Gestão da plataforma: encomendas, estafetas, tarifas e relatórios.', cta: 'Abrir o painel' },
 ] as const;
@@ -48,7 +49,7 @@ function Landing() {
     <div className="landing">
       <header className="landing-hero">
         <Logo size={48} light slogan />
-        <p>Entregas rápidas e seguras em Quelimane, de bicicleta ou motorizada.</p>
+        <p>Entregas em Quelimane, de bicicleta ou motorizada.</p>
       </header>
       <main className="landing-areas">
         <h2>Escolha a sua área</h2>
@@ -61,7 +62,9 @@ function Landing() {
               <strong>{a.title}</strong>
               <small>{a.text}</small>
             </span>
-            <span className="area-cta">{a.cta} →</span>
+            <span className="area-cta">
+              {a.cta} <Icon name="chevron" size={16} />
+            </span>
           </Link>
         ))}
         <p className="small center">
@@ -81,6 +84,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/cliente/*" element={<ClienteApp />} />
           <Route path="/estafeta/*" element={<EstafetaApp />} />
           <Route path="/admin/*" element={<AdminApp />} />
+          <Route path="/seguir/:token" element={<Seguir />} />
           <Route path="/termos" element={<Legal kind="termos" />} />
           <Route path="/privacidade" element={<Legal kind="privacidade" />} />
           <Route path="*" element={<Navigate to="/" replace />} />

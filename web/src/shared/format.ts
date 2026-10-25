@@ -48,6 +48,27 @@ export const STATUS_LABEL: Record<string, string> = {
   DEVOLVIDO: 'Devolvido',
 };
 
+/** Etapas da barra de progresso: Pedido, Recolhido, Em transporte e Entregue. */
+export const STAGE_LABELS = ['Pedido', 'Recolhido', 'Em transporte', 'Entregue'];
+const STAGE: Record<string, number> = { AGUARDA_PAGAMENTO: 0, PENDENTE_ATRIBUICAO: 1, ATRIBUIDO: 1, ACEITE: 1, RECOLHIDO: 2, EM_TRANSPORTE: 3, ENTREGUE: 4 };
+/** Etapa actual (0 a 4), ou -1 quando o pedido não segue o caminho normal (cancelado, falha, devolução). */
+export const stageOf = (status: string) => STAGE[status] ?? -1;
+
+/** Frase curta para o topo do ecrã de seguimento. */
+export const HEADLINE: Record<string, string> = {
+  AGUARDA_PAGAMENTO: 'Falta pagar o pedido',
+  PENDENTE_ATRIBUICAO: 'À procura de estafeta',
+  ATRIBUIDO: 'Estafeta a confirmar o pedido',
+  ACEITE: 'O estafeta vai a caminho da recolha',
+  RECOLHIDO: 'Encomenda recolhida',
+  EM_TRANSPORTE: 'A encomenda está a caminho',
+  ENTREGUE: 'Encomenda entregue',
+  CANCELADO: 'Pedido cancelado',
+  FALHA_ENTREGA: 'Não foi possível entregar',
+  DEVOLUCAO_PENDENTE: 'A encomenda vai voltar à recolha',
+  DEVOLVIDO: 'Encomenda devolvida',
+};
+
 export const CATEGORIES: Record<string, string> = {
   documentos: 'Documentos',
   roupa: 'Roupa',
@@ -73,4 +94,11 @@ const LABELS: Record<string, string> = {
   codigo: 'Código', checklist: 'Lista de verificação', foto: 'Foto', assinatura: 'Assinatura',
   independente: 'Independente', proprio: 'Próprio', bicicleta: 'Bicicleta', motorizada: 'Motorizada',
 };
-export const lbl = (s: string | null | undefined) => (s ? LABELS[s] ?? s : '—');
+export const lbl = (s: string | null | undefined) => (s ? LABELS[s] ?? s : '-');
+
+/** Ligação do Google Maps com a rota até ao destino. */
+export const mapsLink = (lat: number, lon: number) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
+
+/** Texto e ligação para partilhar o seguimento por WhatsApp. */
+export const whatsappLink = (code: string, url: string) =>
+  `https://wa.me/?text=${encodeURIComponent(`Acompanhe a encomenda ${code} da LevaGo: ${url}`)}`;

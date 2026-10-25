@@ -1,8 +1,10 @@
+import { waitUntil } from '@vercel/functions';
 import type { Stmt } from '../lib/db.js';
 import { Hono } from 'hono';
 import { roadRoute } from '../lib/adapters.js';
 import { all, bad, conflict, files, forbidden, getSetting, need, normalizePhone, notFound, nowIso, one, parseJson, run, uuid, v, type AuthUser, type Ctx, type Env, type Vars } from '../lib/core.js';
 import { checkRoadDistance, pointInPolygon, priceFor, STATUS_LABELS, vehicleCanCarry, type LonLat, type OrderStatus, type PricingRule } from '../lib/domain.js';
+import { sendPush } from '../lib/push.js';
 import { actorRole, auditStmt, notifyStmt, requireRole, transition, type OrderRow } from '../lib/services.js';
 
 const r = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -368,6 +370,7 @@ r.post('/orders/:id/assign', async (c) => {
     ok = await transition(c.env.DB, fresh, 'ATRIBUIDO', { id: u.id, role: 'admin' }, { requireCourier: null, set: { assigned_courier_id: b.courier_id }, note: b.reason, extra: [offer, notifyCourier, auditStmt(c.env.DB, who(u), 'order.reassign', 'order', o.id, b.reason)] });
   } else throw conflict('estado_invalido', 'Só pedidos pendentes, atribuídos ou aceites podem ser (re)atribuídos.');
   if (!ok) throw conflict('estado_mudou', 'O pedido mudou entretanto. Actualize.');
+  waitUntil(sendPush(c.env.DB, b.courier_id, { title: `Nova tarefa ${o.code}`, body: 'Foi-lhe atribuído um pedido. Aceite ou recuse na app.', url: `/estafeta/tarefa/${o.id}` }));
   return c.json({ ok: true });
 });
 

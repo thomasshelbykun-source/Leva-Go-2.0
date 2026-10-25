@@ -1,6 +1,6 @@
-// Logótipo e ícones da LevaGo. Tudo em SVG para ficar nítido em qualquer ecrã e funcionar sem rede.
+// Logótipo e ícones da LevaGo, em SVG.
 
-/** Caixa laranja com linhas de velocidade: o símbolo da marca. */
+/** Símbolo da marca: caixa laranja com linhas de velocidade. */
 export function LogoMark({ size = 48 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
@@ -15,7 +15,7 @@ export function LogoMark({ size = 48 }: { size?: number }) {
   );
 }
 
-/** Logótipo completo: símbolo, "Leva" (azul ou branco) e "Go" (laranja), com o slogan opcional. */
+/** Logótipo completo, com slogan opcional. */
 export function Logo({ size = 40, light = false, slogan = false, className = '' }: { size?: number; light?: boolean; slogan?: boolean; className?: string }) {
   return (
     <div className={`logo ${light ? 'logo-light' : ''} ${className}`} aria-label="LevaGo">
@@ -56,6 +56,15 @@ const PATHS: Record<string, string> = {
   logout: 'M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H3',
   menu: 'M3 6h18M3 12h18M3 18h18',
   star: 'M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z',
+  close: 'M6 6l12 12M18 6 6 18',
+  chevron: 'M9 5l7 7-7 7',
+  navigate: 'M3 11 21 3l-8 18-2-8z',
+  share: 'M12 15V3M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6',
+  check: 'M5 12.5l4.5 4.5L19 7.5',
+  plus: 'M12 5v14M5 12h14',
+  target: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6',
+  bolt: 'M13 2 4 14h7l-1 8 9-12h-7z',
+  phone: 'M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2',
 };
 
 export type IconName = keyof typeof PATHS;

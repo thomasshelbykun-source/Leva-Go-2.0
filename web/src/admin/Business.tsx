@@ -81,7 +81,7 @@ export function Subscriptions() {
               <Table
                 head={['Cliente', 'Plano', 'Estado', 'Uso', 'Fim do período', 'Renova', '']}
                 rows={d.subscriptions.map((s: any) => [
-                  s.customer, s.plan, lbl(s.status), s.deliveries_total != null ? `${s.deliveries_used}/${s.deliveries_total}` : '—', dateTime(s.current_period_end), s.auto_renew ? 'Sim' : 'Não',
+                  s.customer, s.plan, lbl(s.status), s.deliveries_total != null ? `${s.deliveries_used}/${s.deliveries_total}` : '-', dateTime(s.current_period_end), s.auto_renew ? 'Sim' : 'Não',
                   s.status === 'active' ? (
                     <span className="row-end">
                       <button className="link" onClick={() => setDlg({ title: 'Cancelar renovação', path: `/admin/subscriptions/${s.id}/cancel`, body: { immediate: false } })}>Sem renovação</button>
@@ -126,7 +126,7 @@ export function Payments() {
               <Table
                 head={['Valor', 'Motivo', 'Pedido por', 'Aprovado por', 'Estado', 'Data', '']}
                 rows={d.refunds.map((r: any) => [
-                  mt(r.amount_cents), r.reason, r.requested_by_name, r.approved_by_name ?? '—', lbl(r.status), dateTime(r.created_at),
+                  mt(r.amount_cents), r.reason, r.requested_by_name, r.approved_by_name ?? '-', lbl(r.status), dateTime(r.created_at),
                   r.status === 'requested' && r.requested_by !== me?.id ? (
                     <span className="row-end">
                       <button className="link" onClick={() => setDlg({ title: 'Aprovar reembolso', path: `/admin/refunds/${r.id}/decide`, body: { decision: 'approved' } })}>Aprovar</button>
@@ -148,7 +148,7 @@ export function Payments() {
             <Table
               head={['Cliente', 'Encomenda', 'Método', 'Estado', 'Valor', 'Referência', 'Data', '']}
               rows={d.intents.map((p: any) => [
-                p.customer, p.order_code ?? (p.subscription_id ? 'Subscrição' : '—'), PAY_METHOD[p.provider] ?? p.provider, lbl(p.status), mt(p.amount_cents), p.provider_ref ?? '—', dateTime(p.created_at),
+                p.customer, p.order_code ?? (p.subscription_id ? 'Subscrição' : '-'), PAY_METHOD[p.provider] ?? p.provider, lbl(p.status), mt(p.amount_cents), p.provider_ref ?? '-', dateTime(p.created_at),
                 p.status === 'succeeded' ? <button className="link" onClick={() => { setAmount(String(p.amount_cents / 100)); setDlg({ title: 'Pedir reembolso', path: `/admin/payments/${p.id}/refunds`, body: {}, amount: true }); }}>Reembolsar</button> : p.failure_reason ?? '',
               ])}
             />
@@ -221,10 +221,10 @@ export function Pricing() {
             head={['Versão', 'Estado', 'Nota', 'Normal', 'Expressa', 'Publicada', '']}
             rows={versions.map((v) => {
               const r = (t: string) => v.rules.find((x: any) => x.service_type === t);
-              const fmt = (x: any) => (x ? `${mt(x.base_cents)} + ${mt(x.per_km_cents)}/km (mín. ${mt(x.min_total_cents)})` : '—');
+              const fmt = (x: any) => (x ? `${mt(x.base_cents)} + ${mt(x.per_km_cents)}/km (mín. ${mt(x.min_total_cents)})` : '-');
               return [
                 `v${v.version}`, <Badge tone={v.status === 'published' ? 'ok' : v.status === 'draft' ? 'warn' : 'muted'}>{lbl(v.status)}</Badge>, v.note, fmt(r('normal')), fmt(r('expressa')),
-                v.published_at ? `${dateTime(v.published_at)} · ${v.published_by_name ?? ''}` : '—',
+                v.published_at ? `${dateTime(v.published_at)} · ${v.published_by_name ?? ''}` : '-',
                 v.status === 'draft' ? <button className="link" onClick={() => { setApproved(false); setPublish(v); }}>Publicar</button> : '',
               ];
             })}
@@ -373,7 +373,7 @@ export function Tickets() {
           <Table
             head={['Assunto', 'Aberto por', 'Perfil', 'Prioridade', 'Estado', 'Responsável', 'Prazo', '']}
             rows={rows.map((t) => [
-              t.subject, t.opener, t.opener_role === 'courier' ? 'Estafeta' : 'Cliente', lbl(t.priority), lbl(t.status), t.assignee ?? '—',
+              t.subject, t.opener, t.opener_role === 'courier' ? 'Estafeta' : 'Cliente', lbl(t.priority), lbl(t.status), t.assignee ?? '-',
               <span className={t.sla_due_at < new Date().toISOString() && ['aberto', 'em_curso'].includes(t.status) ? 'danger' : ''}>{dateTime(t.sla_due_at)}</span>,
               <Link to={`/admin/suporte/${t.id}`}>Abrir</Link>,
             ])}
@@ -414,7 +414,7 @@ export function TicketDetail() {
               <Button busy={a.busy} disabled={!body.trim()} onClick={async () => (await a.run(() => api.post(`/admin/tickets/${id}/messages`, { body, internal }))) && (setBody(''), q.reload())}>Enviar</Button>
             </Card>
             <Card className="stack">
-              <KV items={[['Aberto por', t.opener], ['Perfil', t.opener_role], ['Encomenda', t.order_id ? <Link to={`/admin/encomendas/${t.order_id}`}>Ver</Link> : '—'], ['Prazo', dateTime(t.sla_due_at)], ['Criado', dateTime(t.created_at)]]} />
+              <KV items={[['Aberto por', t.opener], ['Perfil', t.opener_role], ['Encomenda', t.order_id ? <Link to={`/admin/encomendas/${t.order_id}`}>Ver</Link> : '-'], ['Prazo', dateTime(t.sla_due_at)], ['Criado', dateTime(t.created_at)]]} />
               <Field label="Estado">
                 <select value={t.status} onChange={(e) => patch({ status: e.target.value })}>
                   <option value="aberto">Aberto</option>

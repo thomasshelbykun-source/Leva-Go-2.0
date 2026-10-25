@@ -1,6 +1,6 @@
-// Service worker simples: guarda a "casca" da aplicação para abrir sem rede.
-// Os pedidos à API nunca são guardados em cache (dados pessoais e estados em tempo real).
-const CACHE = 'levago-shell-v2';
+// Service worker: guarda a base da aplicação para abrir sem rede e mostra as notificações push.
+// Os pedidos à API nunca ficam em cache (dados pessoais e estados em tempo real).
+const CACHE = 'levago-shell-v3';
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/index.html', '/icon.svg', '/manifest.webmanifest'])));
   self.skipWaiting();
@@ -23,4 +23,30 @@ self.addEventListener('fetch', (e) => {
       return res;
     })));
   }
+});
+
+self.addEventListener('push', (e) => {
+  let msg = { title: 'LevaGo', body: 'Tem uma novidade na sua encomenda.', url: '/' };
+  try {
+    msg = { ...msg, ...e.data.json() };
+  } catch {
+    /* mensagem sem dados: fica o texto geral */
+  }
+  e.waitUntil(self.registration.showNotification(msg.title, { body: msg.body, icon: '/icon.svg', badge: '/icon.svg', data: { url: msg.url }, tag: msg.url }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || '/';
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const w of list) {
+        if ('focus' in w) {
+          w.navigate(url);
+          return w.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    }),
+  );
 });

@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Avatar, Icon, Logo } from '../shared/brand';
+import { PushCard } from '../shared/Alerts';
+import { Icon, Logo, LogoMark } from '../shared/brand';
 import { useConfig } from '../shared/config';
-import { dateTime, mt, SERVICE, WEEKDAYS } from '../shared/format';
+import { dateTime, HEADLINE, mt, SERVICE, WEEKDAYS } from '../shared/format';
+import { MapView } from '../shared/map';
 import { useSession } from '../shared/session';
 import {
-  Button, ButtonLink, Card, Confirm, Empty, ErrorBox, Field, KV, Loaded, Notice, Page, StatusBadge, Tabs, useAction, useLoad,
+  Button, ButtonLink, Card, Confirm, Empty, ErrorBox, Field, KV, Loaded, Notice, OrderCard, OrderProgress, Page, Sheet, Tabs, useAction, useLoad,
 } from '../shared/ui';
 
 // ------------------------------------------------------------------ Boas-vindas
@@ -17,10 +19,10 @@ export function Welcome() {
         <Logo size={46} light slogan />
       </div>
       <div className="welcome-bottom">
-        <h2>Entregas rápidas e seguras em Quelimane!</h2>
+        <h2>Envie encomendas em Quelimane</h2>
         <ul className="bullets">
           <li>De bicicleta ou motorizada, até 15 kg e 15 km por estrada.</li>
-          <li>Preço claro antes de confirmar. Acompanhe no mapa.</li>
+          <li>Veja o preço antes de confirmar e acompanhe o estafeta no mapa.</li>
         </ul>
         {cfg && (
           <p className="small">
@@ -42,65 +44,136 @@ export function Welcome() {
 // ------------------------------------------------------------------ Início
 export function Home() {
   const { api } = useSession();
+  const nav = useNavigate();
   const cfg = useConfig();
   const q = useLoad(() => api.get('/home'), [], 20_000);
+  const orders = useLoad(() => api.get('/orders?filter=todas&page=1'), [], 30_000);
+  const places = useLoad(() => api.get<any[]>('/addresses'), []);
+  const [me, setMe] = useState<{ lat: number; lon: number } | null>(null);
+  const [geoMsg, setGeoMsg] = useState<string | null>(null);
+
+  const locate = () => {
+    if (!navigator.geolocation) return setGeoMsg('Este dispositivo não indica a localização.');
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        setGeoMsg(null);
+        setMe({ lat: p.coords.latitude, lon: p.coords.longitude });
+      },
+      () => setGeoMsg('Não foi possível obter a localização. Autorize o acesso no navegador.'),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
+  const items: any[] = orders.data?.items ?? [];
+  const last = items[0];
+
   return (
-    <Page title="Início">
-      <Loaded q={q}>
-        {(h) => (
-          <div className="stack">
-            <div className="greet">
-              <Avatar name={h.name} />
-              <div>
-                <h2>Olá, {String(h.name).split(' ')[0]}!</h2>
-                <small>Cliente LevaGo · Quelimane</small>
+    <div className="map-screen">
+      <MapView height="58vh" markers={me ? [{ ...me, kind: 'me' }] : []} padBottom={120} />
+      <div className="map-top">
+        <span className="round-btn" aria-hidden="true">
+          <LogoMark size={28} />
+        </span>
+        <div className="row-end">
+          <button type="button" className="round-btn" aria-label="Mostrar a minha localização" onClick={locate}>
+            <Icon name="target" />
+          </button>
+          <Link to="/cliente/notificacoes" className="round-btn" aria-label="Notificações">
+            <Icon name="bell" />
+            {(q.data?.unread_notifications ?? 0) > 0 && <span className="dot-badge" />}
+          </Link>
+        </div>
+      </div>
+      <Sheet>
+        <Loaded q={q}>
+          {(h) => (
+            <>
+              <div className="stack" style={{ gap: '0.2rem' }}>
+                <small className="sub">Olá, {String(h.name).split(' ')[0]}</small>
+                <h2 className="headline">Que encomenda vai enviar?</h2>
               </div>
-            </div>
-            {cfg && !cfg.open_now && <Notice tone="warn">Estamos fora do horário. Pode agendar uma entrega.</Notice>}
-            <Link to="/cliente/nova" className="action-big">
-              <Icon name="box" size={26} /> Solicitar entrega
-            </Link>
-            <Link to={h.active_order ? `/cliente/encomendas/${h.active_order.id}` : '/cliente/encomendas'} className="action-big action-light">
-              <Icon name="search" size={24} /> Acompanhar entrega
-            </Link>
-            <div className="grid-2">
-              <Link to="/cliente/encomendas" className="tile">
-                <Icon name="list" /> Minhas encomendas
+              {geoMsg && <Notice tone="warn">{geoMsg}</Notice>}
+              {cfg && !cfg.open_now && <Notice tone="warn">Estamos fora do horário. Pode agendar uma entrega.</Notice>}
+              <Link to="/cliente/nova" className="action-big">
+                <Icon name="plus" size={24} /> Nova encomenda
               </Link>
-              <Link to="/cliente/planos" className="tile">
-                <Icon name="tag" /> Planos de subscrição
-              </Link>
-            </div>
-            {h.active_order && (
-              <Card onClick={() => (location.href = `/cliente/encomendas/${h.active_order.id}`)}>
-                <small>Encomenda em curso</small>
-                <div className="row-between">
-                  <strong>{h.active_order.code}</strong>
-                  <StatusBadge status={h.active_order.status} />
+
+              {(places.data ?? []).length > 0 && (
+                <div className="place-list">
+                  {places.data!.slice(0, 3).map((p) => (
+                    <Link key={p.id} to={`/cliente/nova?para=${p.id}`} className="place-row">
+                      <span className="ico">
+                        <Icon name="pin" size={18} />
+                      </span>
+                      <span className="txt">
+                        <strong>{p.label}</strong>
+                        <small>{p.description}</small>
+                      </span>
+                      <Icon name="chevron" size={18} />
+                    </Link>
+                  ))}
                 </div>
-              </Card>
-            )}
-            {h.subscription ? (
-              <Card>
-                <small>Subscrição {h.subscription.plan_name}</small>
-                <p>
-                  <strong>{h.subscription.remaining}</strong> de {h.subscription.total} entregas disponíveis até {dateTime(h.subscription.period_end)}
-                </p>
-              </Card>
-            ) : (
-              <Card onClick={() => (location.href = '/cliente/planos')}>
-                <strong>Envia com frequência?</strong>
-                <p className="small">Veja os planos de subscrição.</p>
-              </Card>
-            )}
-            <div className="promo">
-              <strong>Entregas rápidas em toda Quelimane!</strong>
-              <small>Normal ou expressa, com preço claro antes de confirmar.</small>
-            </div>
-          </div>
-        )}
-      </Loaded>
-    </Page>
+              )}
+
+              {h.active_order && (
+                <Link to={`/cliente/encomendas/${h.active_order.id}`} className="live-card">
+                  <span className="icon-wrap">
+                    <Icon name="scooter" />
+                  </span>
+                  <span className="txt">
+                    <strong>{HEADLINE[h.active_order.status] ?? h.active_order.status}</strong>
+                    <small>Encomenda {h.active_order.code}</small>
+                    <OrderProgress status={h.active_order.status} labels={false} />
+                  </span>
+                  <Icon name="chevron" size={18} />
+                </Link>
+              )}
+
+              {last && last.id !== h.active_order?.id && (
+                <>
+                  <h3>Última encomenda</h3>
+                  <OrderCard o={last} onClick={() => nav(`/cliente/encomendas/${last.id}`)} />
+                  {last.status === 'ENTREGUE' && !last.rated && (
+                    <Link to={`/cliente/encomendas/${last.id}`} className="live-card">
+                      <span className="icon-wrap">
+                        <Icon name="star" />
+                      </span>
+                      <span className="txt">
+                        <strong>Avalie o estafeta</strong>
+                        <small>Diga como correu a entrega {last.code}.</small>
+                      </span>
+                      <Icon name="chevron" size={18} />
+                    </Link>
+                  )}
+                </>
+              )}
+
+              <PushCard compact />
+
+              {h.subscription ? (
+                <Card>
+                  <small>Subscrição {h.subscription.plan_name}</small>
+                  <p>
+                    <strong>{h.subscription.remaining}</strong> de {h.subscription.total} entregas disponíveis até {dateTime(h.subscription.period_end)}
+                  </p>
+                </Card>
+              ) : (
+                <Link to="/cliente/planos" className="live-card">
+                  <span className="icon-wrap">
+                    <Icon name="tag" />
+                  </span>
+                  <span className="txt">
+                    <strong>Envia com frequência?</strong>
+                    <small>Veja os planos de subscrição.</small>
+                  </span>
+                  <Icon name="chevron" size={18} />
+                </Link>
+              )}
+            </>
+          )}
+        </Loaded>
+      </Sheet>
+    </div>
   );
 }
 
@@ -125,21 +198,11 @@ export function Orders() {
       <Loaded q={q}>
         {(d) =>
           d.items.length === 0 ? (
-            <Empty title="Sem encomendas" text="Quando enviar uma encomenda, ela aparece aqui." action={<ButtonLink to="/cliente/nova">Enviar encomenda</ButtonLink>} />
+            <Empty icon="box" title="Sem encomendas" text="Quando enviar uma encomenda, ela aparece aqui." action={<ButtonLink to="/cliente/nova">Enviar encomenda</ButtonLink>} />
           ) : (
             <div className="stack">
               {d.items.map((o: any) => (
-                <Card key={o.id} onClick={() => nav(`/cliente/encomendas/${o.id}`)}>
-                  <div className="row-between">
-                    <strong>{o.code}</strong>
-                    <StatusBadge status={o.status} label={o.status_label} />
-                  </div>
-                  <small className="ellipsis">→ {o.dropoff?.text}</small>
-                  <div className="row-between small">
-                    <span>{dateTime(o.created_at)}</span>
-                    <span>{mt(o.price_cents)}</span>
-                  </div>
-                </Card>
+                <OrderCard key={o.id} o={o} onClick={() => nav(`/cliente/encomendas/${o.id}`)} />
               ))}
               <div className="row-between">
                 <Button kind="ghost" disabled={page === 1} onClick={() => setPage(page - 1)}>
@@ -188,7 +251,7 @@ export function Plans() {
                 )}
               </Card>
             )}
-            {d.plans.length === 0 && <Empty title="Sem planos publicados" text="Os planos de subscrição ainda não estão disponíveis." />}
+            {d.plans.length === 0 && <Empty icon="tag" title="Sem planos publicados" text="Os planos de subscrição ainda não estão disponíveis." />}
             {d.plans.map((p: any) => (
               <Card key={p.id} className="stack">
                 <div className="row-between">
@@ -256,7 +319,7 @@ export function Notifications({ base }: { base: string }) {
       <Loaded q={q}>
         {(items) =>
           items.length === 0 ? (
-            <Empty title="Sem notificações" />
+            <Empty icon="bell" title="Sem notificações" text="Os avisos sobre as suas encomendas aparecem aqui." />
           ) : (
             <div className="stack">
               {items.map((n) => (
@@ -303,6 +366,7 @@ export function Profile({ base }: { base: string }) {
   return (
     <Page title="Perfil e definições">
       <div className="stack">
+        <PushCard />
         <Card className="stack">
           <h3>Dados pessoais</h3>
           <Field label="Nome">

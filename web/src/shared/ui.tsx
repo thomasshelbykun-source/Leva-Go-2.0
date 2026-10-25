@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ApiError } from './api';
-import { STATUS_LABEL, STATUS_TONE } from './format';
+import { Icon, type IconName } from './brand';
+import { STAGE_LABELS, stageOf, STATUS_LABEL, STATUS_TONE } from './format';
 
 // ------------------------------------------------------------------ Dados
-/** Carrega dados com estados de carregamento, erro e recarga. */
+/** Carrega dados e guarda os estados de carregamento e erro. */
 export function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = [], pollMs?: number) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -34,7 +35,7 @@ export function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = [], pollMs?: 
   return { data, error, loading, reload, setData };
 }
 
-/** Executa uma acção (submeter formulário, botão) e guarda erro e estado ocupado. */
+/** Executa uma acção e guarda o erro e o estado ocupado. */
 export function useAction() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
@@ -61,7 +62,7 @@ export function Page({ title, back, actions, children, wide }: { title: string; 
       <header className="page-head">
         {back && (
           <button className="icon-btn" aria-label="Voltar" onClick={() => (back === true ? nav(-1) : nav(back))}>
-            ←
+            <Icon name="back" />
           </button>
         )}
         <h1>{title}</h1>
@@ -69,6 +70,25 @@ export function Page({ title, back, actions, children, wide }: { title: string; 
       </header>
       {children}
     </div>
+  );
+}
+
+/** Painel branco que sobe por cima do mapa, como nas apps de transporte. */
+export function Sheet({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return (
+    <section className={`sheet ${className}`}>
+      <div className="sheet-handle" aria-hidden="true" />
+      {children}
+    </section>
+  );
+}
+
+/** Interruptor (ligar e desligar). */
+export function Switch({ checked, onChange, busy, label }: { checked: boolean; onChange: () => void; busy?: boolean; label: string }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={busy} className={`switch ${checked ? 'on' : ''}`} onClick={onChange}>
+      <span className="switch-knob" />
+    </button>
   );
 }
 
@@ -107,11 +127,21 @@ export function Field({ label, error, hint, children }: { label: string; error?:
   );
 }
 
-export function Loading({ text = 'A carregar…' }: { text?: string }) {
+/** Linha cinzenta animada que ocupa o lugar do conteúdo enquanto carrega. */
+export function Skeleton({ w = '100%', h = 14, round = false }: { w?: string | number; h?: number; round?: boolean }) {
+  return <span className="skeleton" style={{ width: w, height: h, borderRadius: round ? '50%' : 8 }} aria-hidden="true" />;
+}
+
+export function Loading({ text = 'A carregar…', rows = 3 }: { text?: string; rows?: number }) {
   return (
-    <div className="state" role="status">
-      <div className="spinner" />
-      <p>{text}</p>
+    <div className="stack" role="status" aria-label={text}>
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="card skeleton-card">
+          <Skeleton w="40%" h={16} />
+          <Skeleton w="85%" />
+          <Skeleton w="60%" />
+        </div>
+      ))}
     </div>
   );
 }
@@ -139,10 +169,12 @@ export function ErrorBox({ error, retry }: { error: ApiError | null; retry?: () 
   );
 }
 
-export function Empty({ title, text, action }: { title: string; text?: string; action?: ReactNode }) {
+export function Empty({ title, text, action, icon = 'box' }: { title: string; text?: string; action?: ReactNode; icon?: IconName }) {
   return (
     <div className="state empty">
-      <div className="empty-icon">📦</div>
+      <div className="empty-icon">
+        <Icon name={icon} size={30} />
+      </div>
       <h3>{title}</h3>
       {text && <p>{text}</p>}
       {action}
@@ -150,7 +182,49 @@ export function Empty({ title, text, action }: { title: string; text?: string; a
   );
 }
 
-/** Mostra carregamento, erro ou o conteúdo. */
+/** Barra com as 4 etapas da entrega. Não aparece em pedidos cancelados ou com falha. */
+export function OrderProgress({ status, labels = true }: { status: string; labels?: boolean }) {
+  const stage = stageOf(status);
+  if (stage < 0) return null;
+  return (
+    <div className="progress-wrap">
+      <div className="progress" role="img" aria-label={`Etapa ${Math.max(stage, 1)} de 4`}>
+        {STAGE_LABELS.map((l, i) => (
+          <span key={l} className={i < stage ? 'on' : ''} />
+        ))}
+      </div>
+      {labels && (
+        <div className="progress-labels">
+          {STAGE_LABELS.map((l, i) => (
+            <small key={l} className={i < stage ? 'on' : ''}>
+              {l}
+            </small>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Cartão de encomenda: cor do estado à esquerda, destino e barra de progresso. */
+export function OrderCard({ o, onClick }: { o: any; onClick: () => void }) {
+  return (
+    <div className={`card clickable order-card tone-${STATUS_TONE[o.status] ?? 'muted'}`} onClick={onClick} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onClick()}>
+      <div className="row-between">
+        <strong>{o.code}</strong>
+        <StatusBadge status={o.status} label={o.status_label} />
+      </div>
+      <span className="ellipsis">Para {o.dropoff?.text}</span>
+      <OrderProgress status={o.status} labels={false} />
+      <div className="row-between small">
+        <span>{new Date(o.created_at).toLocaleString('pt-PT', { timeZone: 'Africa/Maputo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+        <span>{(o.price_cents / 100).toLocaleString('pt-PT', { minimumFractionDigits: 2 })} MT</span>
+      </div>
+    </div>
+  );
+}
+
+/** Mostra o carregamento, o erro ou o conteúdo. */
 export function Loaded<T>({ q, children }: { q: { data: T | null; error: ApiError | null; loading: boolean; reload: () => void }; children: (d: T) => ReactNode }) {
   if (q.loading && !q.data) return <Loading />;
   if (q.error && !q.data) return <ErrorBox error={q.error} retry={q.reload} />;
@@ -182,7 +256,7 @@ export function Tabs<T extends string>({ value, onChange, options }: { value: T;
   );
 }
 
-/** Janela de confirmação. Com `reasonLabel`, exige um motivo (acções administrativas auditadas). */
+/** Janela de confirmação. Com `reasonLabel`, o motivo é obrigatório. */
 export function Confirm({
   title, text, reasonLabel, confirmLabel = 'Confirmar', danger, onConfirm, onClose, children,
 }: {
