@@ -82,7 +82,11 @@ export function Login() {
       <div className="admin-login">
         {form}
         <div className="admin-login-art" aria-hidden="true">
-          <Logo size={56} light slogan />
+          <div>
+            <Logo size={56} light />
+            <p className="art-claim">Painel de operação</p>
+            <p className="art-sub">Encomendas, estafetas, pagamentos e apoio num só lugar.</p>
+          </div>
         </div>
       </div>
     );

@@ -26,7 +26,7 @@ export function Logo({ size = 40, light = false, slogan = false, className = '' 
           <span className="logo-go">Go</span>
         </span>
       </div>
-      {slogan && <small className="logo-slogan">A tua entrega, o nosso compromisso!</small>}
+      {slogan && <small className="logo-slogan">Entregas em Quelimane</small>}
     </div>
   );
 }
