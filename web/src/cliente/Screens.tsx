@@ -367,6 +367,11 @@ export function Profile({ base }: { base: string }) {
     <Page title="Perfil e definições">
       <div className="stack">
         <PushCard />
+        {s.app !== 'admin' && me.roles?.some((r) => r === 'admin' || r === 'super_admin') && (
+          <Link to="/admin" className="btn btn-secondary">
+            Abrir painel administrativo
+          </Link>
+        )}
         <Card className="stack">
           <h3>Dados pessoais</h3>
           <Field label="Nome">

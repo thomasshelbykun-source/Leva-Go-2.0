@@ -36,7 +36,7 @@ function useMap(ref: React.RefObject<HTMLDivElement>, onClick?: (lat: number, lo
     // Sem botões de zoom: nos telemóveis usa-se o gesto de pinça.
     const m = L.map(ref.current, { zoomControl: false, attributionControl: true }).setView(QUELIMANE, 13);
     m.attributionControl.setPrefix(false);
-    L.tileLayer(TILE_URL, { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(m);
+    L.tileLayer(TILE_URL, { maxZoom: 19, detectRetina: true, attribution: '© OpenStreetMap' }).addTo(m);
     m.on('click', (e: L.LeafletMouseEvent) => click.current?.(e.latlng.lat, e.latlng.lng));
     map.current = m;
     return () => {

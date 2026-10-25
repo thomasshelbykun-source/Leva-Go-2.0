@@ -18,6 +18,12 @@ function Brand({ title }: { title: string }) {
 /** Mostra em que área a pessoa está e deixa mudar de área sem confusão. */
 function AreaSwitch() {
   const s = useSession();
+  if (s.app === 'admin')
+    return (
+      <p className="small center area-switch">
+        <Link to="/">Voltar ao início</Link>
+      </p>
+    );
   return (
     <p className="small center area-switch">
       Está na área <strong>{AREA[s.app]}</strong> · <Link to="/">Mudar de área</Link>
