@@ -97,6 +97,33 @@ export async function sendOtp(env: Env, phone: string, code: string): Promise<{ 
   return { delivered: false, devCode: code };
 }
 
+// ------------------------------------------------------------------ Email
+/** Envia o código por email (Resend). Sem chave configurada, o código só é devolvido fora de produção. */
+export async function sendEmailCode(env: Env, email: string, code: string, purpose: 'register' | 'reset'): Promise<{ delivered: boolean; devCode?: string }> {
+  if (env.RESEND_API_KEY) {
+    const what = purpose === 'register' ? 'confirmar a sua conta LevaGo' : 'mudar a palavra-passe da sua conta LevaGo';
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${env.RESEND_API_KEY}` },
+      body: JSON.stringify({
+        from: env.EMAIL_FROM || 'LevaGo <levago@uquiorrapay.com>',
+        to: [email],
+        subject: `LevaGo: o seu código é ${code}`,
+        text: `Olá,\n\nO seu código para ${what} é: ${code}\n\nO código vale 10 minutos. Não o partilhe com ninguém.\nSe não pediu este código, ignore este email.\n\nLevaGo, Quelimane`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;color:#0d2a4f"><h2 style="margin:0 0 12px">LevaGo</h2><p>O seu código para ${what} é:</p><p style="font-size:32px;font-weight:700;letter-spacing:6px;color:#f26a12;margin:16px 0">${code}</p><p>O código vale 10 minutos. Não o partilhe com ninguém.</p><p style="color:#667">Se não pediu este código, ignore este email.</p></div>`,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) {
+      console.error('resend', res.status, await res.text().catch(() => ''));
+      throw new ApiError(503, 'email_indisponivel', 'Não foi possível enviar o email. Tente de novo dentro de minutos.');
+    }
+    return { delivered: true };
+  }
+  if (env.ENVIRONMENT === 'production') throw new ApiError(503, 'email_indisponivel', 'O envio de email ainda não está configurado.');
+  return { delivered: false, devCode: code };
+}
+
 // ------------------------------------------------------------------ Pagamentos
 export type PaymentProvider = 'mpesa' | 'emola' | 'sandbox';
 

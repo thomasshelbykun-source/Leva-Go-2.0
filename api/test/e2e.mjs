@@ -32,7 +32,7 @@ async function api(method, path, { token, body, idem, form } = {}) {
 }
 
 async function register(name, phone, app = 'cliente') {
-  const s = await api('POST', '/auth/register/start', { body: { name, phone, password: 'segredo123', consent_terms: true, consent_privacy: true, app } });
+  const s = await api('POST', '/auth/register/start', { body: { name, phone, email: `u${phone}@teste.levago.mz`, password: 'segredo123', consent_terms: true, consent_privacy: true, app } });
   if (s.status !== 200) throw new Error(`register/start ${s.status} ${JSON.stringify(s.data)}`);
   const v = await api('POST', '/auth/register/verify', { body: { verification_id: s.data.verification_id, code: s.data.dev_code } });
   if (v.status !== 201) throw new Error(`register/verify ${v.status} ${JSON.stringify(v.data)}`);
@@ -83,7 +83,7 @@ async function main() {
     const cli = await register('Carla Cliente', '842000001');
     ok((await api('POST', '/auth/login', { body: { phone: '842000001', password: 'segredo123', app: 'admin' } })).status === 403, 'cliente não entra no painel admin');
     ok((await api('GET', '/admin/orders', { token: cli.token })).status === 403, 'cliente não acede a rotas admin');
-    const dup = await api('POST', '/auth/register/start', { body: { name: 'Xavier', phone: '842000001', password: 'segredo123', consent_terms: true, consent_privacy: true, app: 'cliente' } });
+    const dup = await api('POST', '/auth/register/start', { body: { name: 'Xavier', phone: '842000001', email: 'xavier@teste.levago.mz', password: 'segredo123', consent_terms: true, consent_privacy: true, app: 'cliente' } });
     ok(dup.status === 200 && !dup.data.dev_code, 'registo duplicado não revela a conta nem envia código');
 
     // Horário 24h para o teste não depender da hora a que corre.

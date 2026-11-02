@@ -132,8 +132,8 @@ export function Register() {
             }
           }}
         >
-          <Brand title="Confirmar telemóvel" />
-          <p>Enviámos um código de 6 dígitos por SMS para {f.phone}.</p>
+          <Brand title="Confirmar email" />
+          <p>Enviámos um código de 6 dígitos para {f.email}. Veja também a pasta de spam.</p>
           {ver.dev_code && <Notice tone="warn">Ambiente de teste: o código é {ver.dev_code}</Notice>}
           <Field label="Código">
             <input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} required />
@@ -156,7 +156,7 @@ export function Register() {
         className="card stack"
         onSubmit={async (e) => {
           e.preventDefault();
-          const r = await a.run(() => s.api.post('/auth/register/start', { ...f, email: f.email || undefined, app: s.app }));
+          const r = await a.run(() => s.api.post('/auth/register/start', { ...f, email: f.email.trim(), app: s.app }));
           if (r) setVer(r);
         }}
       >
@@ -167,8 +167,8 @@ export function Register() {
         <Field label="Telemóvel" hint="Vodacom, Tmcel ou Movitel (8X XXX XXXX)" error={fieldErr('phone')}>
           <PhoneInput value={f.phone} onChange={(v) => setF({ ...f, phone: v })} />
         </Field>
-        <Field label="Email (opcional)" error={fieldErr('email')}>
-          <input type="email" autoComplete="email" value={f.email} onChange={set('email')} />
+        <Field label="Email" hint="Enviamos o código de confirmação para este email" error={fieldErr('email')}>
+          <input type="email" autoComplete="email" value={f.email} onChange={set('email')} required />
         </Field>
         <Field label="Palavra-passe" hint="8 ou mais caracteres, com letras e números" error={fieldErr('password')}>
           <PasswordInput autoComplete="new-password" value={f.password} onChange={(v) => setF({ ...f, password: v })} />

@@ -14,6 +14,8 @@ export interface Env {
   PAYMENTS_WEBHOOK_SECRET?: string;
   SMS_PROVIDER_URL?: string;
   SMS_PROVIDER_KEY?: string;
+  RESEND_API_KEY?: string;
+  EMAIL_FROM?: string;
 }
 
 export interface AuthUser {

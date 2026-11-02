@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { sendOtp } from '../lib/adapters.js';
+import { sendEmailCode } from '../lib/adapters.js';
 import { addMinutes, ApiError, bad, conflict, need, normalizePhone, nowIso, one, parseJson, run, uuid, v, type AppName, type Env, type Role, type Vars } from '../lib/core.js';
 import { hashPassword, passwordProblem, randomDigits, sha256, verifyPassword } from '../lib/crypto.js';
 import { auditStmt, createSession, rateLimit, requireRole } from '../lib/services.js';
@@ -12,24 +12,26 @@ const APP_ROLES: Record<AppName, Role[]> = {
   admin: ['admin', 'super_admin'],
 };
 
-/** Passo 1 do registo: valida os dados, guarda-os pendentes e envia o código ao telemóvel. */
+/** Passo 1 do registo: valida os dados, guarda-os pendentes e envia o código para o email (sem SMS por agora). */
 auth.post('/register/start', async (c) => {
   const body = need<{ name: string; phone: string; email?: string; password: string; consent_terms: boolean; consent_privacy: boolean; app: AppName }>(await c.req.json(), {
     name: v.str(2, 80),
     phone: v.phone(),
-    email: (x) => (x === undefined || x === '' || (typeof x === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)) ? null : 'Email inválido.'),
+    email: (x) => (typeof x === 'string' && x.length <= 120 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.trim()) ? null : 'Indique um email válido. O código de confirmação vai para o email.'),
     password: passwordProblem,
     consent_terms: (x) => (x === true ? null : 'É preciso aceitar os termos.'),
     consent_privacy: (x) => (x === true ? null : 'É preciso aceitar a política de privacidade.'),
     app: v.oneOf('cliente', 'estafeta'),
   });
   const phone = normalizePhone(body.phone)!;
+  const email = body.email!.trim().toLowerCase();
   await rateLimit(c.env.DB, `otp:${phone}`, 5, 60);
+  await rateLimit(c.env.DB, `otp-mail:${email}`, 5, 60);
   await rateLimit(c.env.DB, `otp-ip:${c.req.header('cf-connecting-ip') ?? 'local'}`, 20, 60);
 
   const code = randomDigits(6);
   const id = uuid();
-  const payload = { name: body.name, email: body.email || null, password_hash: await hashPassword(body.password), app: body.app };
+  const payload = { name: body.name, email, password_hash: await hashPassword(body.password), app: body.app };
   await run(
     c.env.DB,
     "INSERT INTO phone_verifications (id, phone, purpose, code_hash, expires_at, payload) VALUES (?,?, 'register', ?, ?, ?)",
@@ -40,9 +42,9 @@ auth.post('/register/start', async (c) => {
     JSON.stringify(payload),
   );
   // A resposta é igual exista ou não a conta, para não revelar números registados.
-  const existing = await one(c.env.DB, 'SELECT 1 FROM users WHERE phone = ?', phone);
-  const sent = existing ? { delivered: false } : await sendOtp(c.env, phone, code);
-  return c.json({ verification_id: id, expires_in_s: 600, ...(sent.devCode ? { dev_code: sent.devCode } : {}) });
+  const existing = await one(c.env.DB, 'SELECT 1 FROM users WHERE phone = ? OR lower(email) = ?', phone, email);
+  const sent = existing ? { delivered: false } : await sendEmailCode(c.env, email, code, 'register');
+  return c.json({ verification_id: id, expires_in_s: 600, channel: 'email', ...(sent.devCode ? { dev_code: sent.devCode } : {}) });
 });
 
 /** Passo 2: confirma o código e cria a conta. */
@@ -59,7 +61,8 @@ auth.post('/register/verify', async (c) => {
     await run(c.env.DB, 'UPDATE phone_verifications SET attempts = attempts + 1 WHERE id = ?', ver.id);
     throw bad('codigo_errado', 'Código incorrecto.');
   }
-  if (await one(c.env.DB, 'SELECT 1 FROM users WHERE phone = ?', ver.phone)) throw conflict('telefone_em_uso', 'Não foi possível criar a conta com este número. Inicie sessão ou recupere a palavra-passe.');
+  const pe = parseJson<{ email: string | null }>(ver.payload, { email: null });
+  if (await one(c.env.DB, 'SELECT 1 FROM users WHERE phone = ? OR lower(email) = ?', ver.phone, pe.email ?? '')) throw conflict('telefone_em_uso', 'Não foi possível criar a conta com este número. Inicie sessão ou recupere a palavra-passe.');
   const p = parseJson<{ name: string; email: string | null; password_hash: string; app: AppName }>(ver.payload, null as never);
   const userId = uuid();
   const now = nowIso();
@@ -136,13 +139,13 @@ auth.post('/reset/start', async (c) => {
   await rateLimit(c.env.DB, `reset:${phone}`, 3, 60);
   const id = uuid();
   const code = randomDigits(6);
-  const user = await one(c.env.DB, "SELECT 1 FROM users WHERE phone = ? AND status <> 'deleted'", phone);
+  const user = await one<{ email: string | null }>(c.env.DB, "SELECT email FROM users WHERE phone = ? AND status <> 'deleted'", phone);
   let devCode: string | undefined;
-  if (user) {
+  if (user?.email) {
     await run(c.env.DB, "INSERT INTO phone_verifications (id, phone, purpose, code_hash, expires_at) VALUES (?,?,'reset',?,?)", id, phone, await sha256(`${id}:${code}`), addMinutes(new Date(), 10).toISOString());
-    devCode = (await sendOtp(c.env, phone, code)).devCode;
+    devCode = (await sendEmailCode(c.env, user.email, code, 'reset')).devCode;
   }
-  return c.json({ verification_id: id, message: 'Se o número tiver conta, enviámos um código por SMS.', ...(devCode ? { dev_code: devCode } : {}) });
+  return c.json({ verification_id: id, message: 'Se o número tiver conta com email, enviámos um código para esse email.', ...(devCode ? { dev_code: devCode } : {}) });
 });
 
 auth.post('/reset/finish', async (c) => {
