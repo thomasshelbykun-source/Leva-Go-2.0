@@ -1,0 +1,9 @@
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
+# A pasta android/ é gerada no GitHub Actions com «flutter create».
+android/
+ios/

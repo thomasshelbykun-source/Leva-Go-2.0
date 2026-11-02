@@ -1,0 +1,57 @@
+name: APK Android
+
+on:
+  push:
+    branches: [main]
+    paths: ['mobile/**', '.github/workflows/apk.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Gerar projeto Android
+        run: flutter create --org mz.levago --project-name levago --platforms android .
+      - name: Nome, permissões e endereço
+        run: python3 tool/patch_android.py
+      - run: flutter pub get
+      - name: Ícone e ecrã de abertura
+        run: |
+          dart run flutter_launcher_icons
+          dart run flutter_native_splash:create
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+      - name: Construir APK
+        run: flutter build apk --release --build-number=${{ github.run_number }}
+      - name: Renomear
+        run: cp build/app/outputs/flutter-apk/app-release.apk build/LevaGo-2.0.${{ github.run_number }}.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LevaGo-apk
+          path: mobile/build/LevaGo-2.0.${{ github.run_number }}.apk
+      - name: Publicar na página de versões
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: LevaGo Android 2.0.${{ github.run_number }}
+          prerelease: true
+          body: |
+            APK de teste da LevaGo (Cliente, Estafeta e Admin).
+            Abre o site https://levago-three.vercel.app dentro da app.
+            Assinado com a chave de teste: não publicar na Play Store com esta versão.
+          files: mobile/build/LevaGo-2.0.${{ github.run_number }}.apk

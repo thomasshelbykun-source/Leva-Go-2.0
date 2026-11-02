@@ -1,0 +1,45 @@
+name: levago
+description: LevaGo, entregas rápidas e seguras em Quelimane.
+publish_to: 'none'
+version: 2.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  webview_flutter: ^4.10.0
+  webview_flutter_android: ^4.3.0
+  file_picker: ^8.1.2
+  permission_handler: ^11.3.1
+  url_launcher: ^6.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon-foreground.png
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/icon.png
+  adaptive_icon_background: '#0D2A4F'
+  adaptive_icon_foreground: assets/icon-foreground.png
+  min_sdk_android: 21
+
+flutter_native_splash:
+  color: '#0D2A4F'
+  image: assets/icon-foreground.png
+  android_12:
+    color: '#0D2A4F'
+    image: assets/icon-foreground.png
+  ios: false
+  web: false
