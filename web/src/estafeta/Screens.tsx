@@ -1,3 +1,4 @@
+import { HeroSheet } from '../shared/Hero';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Avatar, Icon, Logo } from '../shared/brand';
@@ -16,27 +17,24 @@ const st = (s: string) => <Badge tone={STATE[s]?.[1]}>{STATE[s]?.[0] ?? s}</Badg
 
 export function CourierWelcome() {
   return (
-    <div className="welcome-hero welcome-estafeta">
-      <div className="welcome-top">
-        <Logo size={46} light />
-        <p className="welcome-sub">Aplicação do Estafeta</p>
+    <HeroSheet img="estafeta">
+      <div className="hs-head">
+        <h1 className="hs-title">Faz entregas e ganha com a LevaGo.</h1>
+        <p className="hs-sub">Aplicação do Estafeta</p>
       </div>
-      <div className="welcome-bottom">
-        <h2>Faz parte da LevaGo</h2>
-        <ul className="bullets">
-          <li>Entregas, ganhos e liberdade.</li>
-          <li>Escolhe os teus horários dentro do horário de serviço.</li>
-          <li>Recebe pedidos na tua zona e aumenta os teus ganhos.</li>
-        </ul>
-        <ButtonLink to="/estafeta/entrar">Entrar</ButtonLink>
-        <ButtonLink to="/estafeta/registo" kind="outline">
-          Quero ser estafeta
-        </ButtonLink>
-        <p className="small center">
-          <Link to="/">Mudar de área</Link>
-        </p>
-      </div>
-    </div>
+      <ul className="ticks">
+        <li>Escolhe os teus horários</li>
+        <li>Recebe pedidos na tua zona</li>
+        <li>Acompanha os teus ganhos</li>
+      </ul>
+      <ButtonLink to="/estafeta/entrar">Entrar</ButtonLink>
+      <ButtonLink to="/estafeta/registo" kind="secondary">
+        Quero ser estafeta
+      </ButtonLink>
+      <p className="small center">
+        <Link to="/">Mudar de área</Link>
+      </p>
+    </HeroSheet>
   );
 }
 

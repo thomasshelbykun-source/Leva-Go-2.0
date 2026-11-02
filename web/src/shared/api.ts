@@ -48,14 +48,20 @@ export function api(app: AppName) {
     if (opts.idem) headers['Idempotency-Key'] = opts.idem;
     if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
     let res: Response;
+    // Sem resposta em 25 s (60 s para ficheiros), o pedido é cancelado: o ecrã nunca fica preso.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), opts.form ? 60_000 : 25_000);
     try {
       res = await fetch(`${API_URL}/v1${path}`, {
         method,
         headers,
         body: opts.form ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
+        signal: ctrl.signal,
       });
     } catch {
       throw new ApiError(0, 'sem_rede', 'Sem ligação. Verifique a internet e tente de novo.');
+    } finally {
+      clearTimeout(timer);
     }
     if (res.status === 401 && token) setToken(app, null);
     if (opts.raw && res.ok) return res as unknown as T;

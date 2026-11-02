@@ -1,14 +1,60 @@
-import { lazy, StrictMode, Suspense } from 'react';
+import { Component, lazy, StrictMode, Suspense, type ComponentType, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
-import { Icon, Logo } from './shared/brand';
+import { Icon } from './shared/brand';
+import { HeroSheet } from './shared/Hero';
 import { Loading } from './shared/ui';
 import './styles.css';
 
 // Cada aplicação carrega à parte: o cliente não descarrega o código do painel Admin.
-const ClienteApp = lazy(() => import('./cliente/App'));
-const EstafetaApp = lazy(() => import('./estafeta/App'));
-const AdminApp = lazy(() => import('./admin/App'));
+// Depois de uma nova versão do site, um ficheiro antigo pode já não existir: recarrega uma vez.
+function lazyRetry(load: () => Promise<{ default: ComponentType }>) {
+  return lazy(async () => {
+    try {
+      return await load();
+    } catch (err) {
+      const key = 'levago.reloaded';
+      let last = 0;
+      try {
+        last = Number(sessionStorage.getItem(key) ?? 0);
+        if (Date.now() - last > 30_000) {
+          sessionStorage.setItem(key, String(Date.now()));
+          window.location.reload();
+          return new Promise<never>(() => undefined);
+        }
+      } catch {
+        /* sem armazenamento: mostra o erro */
+      }
+      throw err;
+    }
+  });
+}
+
+const ClienteApp = lazyRetry(() => import('./cliente/App'));
+const EstafetaApp = lazyRetry(() => import('./estafeta/App'));
+const AdminApp = lazyRetry(() => import('./admin/App'));
+
+/** Se algo falhar ao abrir, mostra uma mensagem e um botão, nunca um ecrã vazio. */
+class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="state">
+        <p>
+          <strong>Não foi possível abrir a LevaGo.</strong>
+        </p>
+        <p className="small">Verifique a internet e tente de novo.</p>
+        <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>
+          Tentar de novo
+        </button>
+      </div>
+    );
+  }
+}
 
 function Legal({ kind }: { kind: 'termos' | 'privacidade' }) {
   return (
@@ -37,42 +83,45 @@ function Legal({ kind }: { kind: 'termos' | 'privacidade' }) {
   );
 }
 
-const AREAS = [
-  { to: '/cliente', icon: 'box', title: 'Cliente', text: 'Envie encomendas, pague e acompanhe a entrega.', cta: 'Enviar uma encomenda' },
-  { to: '/estafeta', icon: 'scooter', title: 'Estafeta', text: 'Aceite pedidos, faça entregas e veja os seus ganhos.', cta: 'Entrar como estafeta' },
-] as const;
-
 function Landing() {
   return (
-    <div className="landing">
-      <header className="landing-hero">
-        <Logo size={48} light slogan />
-        <p>Entregas rápidas e seguras em Quelimane, de bicicleta ou motorizada.</p>
-      </header>
-      <main className="landing-areas">
-        <h2>Escolha a sua área</h2>
-        {AREAS.map((a) => (
-          <Link key={a.to} to={a.to} className={`area-card area-${a.title.toLowerCase()}`}>
-            <span className="area-icon">
-              <Icon name={a.icon} size={30} />
-            </span>
-            <span className="area-text">
-              <strong>{a.title}</strong>
-              <small>{a.text}</small>
-            </span>
-            <span className="area-cta">{a.cta} →</span>
-          </Link>
-        ))}
-        <p className="small center">
-          <Link to="/termos">Termos</Link> · <Link to="/privacidade">Privacidade</Link>
-        </p>
-      </main>
-    </div>
+    <HeroSheet img="cliente">
+      <div className="hs-head">
+        <h1 className="hs-title">Entregas em Quelimane, sem complicação.</h1>
+        <p className="hs-sub">Envie e receba encomendas de bicicleta ou motorizada. Acompanhe tudo pelo telemóvel.</p>
+      </div>
+      <div className="choice-list">
+        <Link to="/cliente" className="choice">
+          <span className="choice-icon">
+            <Icon name="box" size={26} />
+          </span>
+          <span className="choice-text">
+            <strong>Enviar uma encomenda</strong>
+            <small>Sou cliente</small>
+          </span>
+          <span className="choice-go" aria-hidden="true">›</span>
+        </Link>
+        <Link to="/estafeta" className="choice choice-alt">
+          <span className="choice-icon">
+            <Icon name="scooter" size={26} />
+          </span>
+          <span className="choice-text">
+            <strong>Fazer entregas</strong>
+            <small>Sou estafeta</small>
+          </span>
+          <span className="choice-go" aria-hidden="true">›</span>
+        </Link>
+      </div>
+      <p className="small center">
+        <Link to="/termos">Termos</Link> · <Link to="/privacidade">Privacidade</Link>
+      </p>
+    </HeroSheet>
   );
 }
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    <Boundary>
     <BrowserRouter>
       <Suspense fallback={<Loading />}>
         <Routes>
@@ -86,6 +135,7 @@ createRoot(document.getElementById('root')!).render(
         </Routes>
       </Suspense>
     </BrowserRouter>
+    </Boundary>
   </StrictMode>,
 );
 

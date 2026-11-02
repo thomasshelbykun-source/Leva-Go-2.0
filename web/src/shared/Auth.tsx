@@ -4,15 +4,27 @@ import { setToken } from './api';
 import { Button, ErrorBox, Field, Notice, useAction } from './ui';
 import { useSession } from './session';
 import { Logo } from './brand';
+import { HeroSheet, PasswordInput, PhoneInput } from './Hero';
 
 const AREA = { cliente: 'Cliente', estafeta: 'Estafeta', admin: 'Admin' } as const;
 
-function Brand({ title }: { title: string }) {
+function Brand({ title, sub }: { title: string; sub?: string }) {
   return (
-    <div className="brand">
-      <Logo size={34} />
-      <h1>{title}</h1>
+    <div className="hs-head">
+      <h1 className="hs-title">{title}</h1>
+      {sub && <p className="hs-sub">{sub}</p>}
     </div>
+  );
+}
+
+/** Cliente e Estafeta: fotografia em cima e formulário num painel branco. */
+function AuthShell({ children }: { children: React.ReactNode }) {
+  const s = useSession();
+  if (s.app === 'admin') return <div className="auth">{children}</div>;
+  return (
+    <HeroSheet img={s.app} compact back>
+      {children}
+    </HeroSheet>
   );
 }
 
@@ -57,20 +69,23 @@ export function Login() {
           <small>Gestão da LevaGo</small>
         </div>
       ) : (
-        <Brand title={s.app === 'estafeta' ? 'Entrar como estafeta' : 'Entrar na tua conta'} />
+        <Brand
+          title={s.app === 'estafeta' ? 'Entrar como estafeta' : 'Bem-vindo de volta'}
+          sub={s.app === 'estafeta' ? 'Use o número registado na LevaGo.' : 'Entre com o seu número de telemóvel.'}
+        />
       )}
       {admin ? (
         <Field label="Email ou telemóvel">
           <input autoComplete="username" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="admin@levago.co.mz" required />
         </Field>
       ) : (
-        <Field label="Número de telefone" hint="Ex.: 84 123 4567">
-          <input inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+258 8X XXX XXXX" required />
+        <Field label="Número de telefone">
+          <PhoneInput value={phone} onChange={setPhone} />
         </Field>
       )}
-        <Field label="Palavra-passe">
-          <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        </Field>
+      <Field label="Palavra-passe">
+        <PasswordInput value={password} onChange={setPassword} />
+      </Field>
       <ErrorBox error={a.error} />
       <Button busy={a.busy}>Entrar</Button>
       <Link className="small center" to={`${s.base}/recuperar`}>
@@ -93,7 +108,7 @@ export function Login() {
         </div>
       </div>
     );
-  return <div className="auth">{form}</div>;
+  return <AuthShell>{form}</AuthShell>;
 }
 
 export function Register() {
@@ -108,7 +123,7 @@ export function Register() {
 
   if (ver) {
     return (
-      <div className="auth">
+      <AuthShell>
         <form
           className="card stack"
           onSubmit={async (e) => {
@@ -134,12 +149,12 @@ export function Register() {
             Alterar dados
           </Button>
         </form>
-      </div>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="auth">
+    <AuthShell>
       <form
         className="card stack"
         onSubmit={async (e) => {
@@ -153,13 +168,13 @@ export function Register() {
           <input autoComplete="name" value={f.name} onChange={set('name')} required />
         </Field>
         <Field label="Telemóvel" hint="Vodacom, Tmcel ou Movitel (8X XXX XXXX)" error={fieldErr('phone')}>
-          <input inputMode="tel" autoComplete="tel" value={f.phone} onChange={set('phone')} required />
+          <PhoneInput value={f.phone} onChange={(v) => setF({ ...f, phone: v })} />
         </Field>
         <Field label="Email (opcional)" error={fieldErr('email')}>
           <input type="email" autoComplete="email" value={f.email} onChange={set('email')} />
         </Field>
         <Field label="Palavra-passe" hint="8 ou mais caracteres, com letras e números" error={fieldErr('password')}>
-          <input type="password" autoComplete="new-password" value={f.password} onChange={set('password')} required />
+          <PasswordInput autoComplete="new-password" value={f.password} onChange={(v) => setF({ ...f, password: v })} />
         </Field>
         <label className="check">
           <input type="checkbox" checked={f.consent_terms} onChange={set('consent_terms')} /> Aceito os <Link to="/termos">Termos de utilização</Link>
@@ -176,7 +191,7 @@ export function Register() {
         </p>
         <AreaSwitch />
       </form>
-    </div>
+    </AuthShell>
   );
 }
 
@@ -190,7 +205,7 @@ export function ResetPassword() {
   const [done, setDone] = useState(false);
   const a = useAction();
   return (
-    <div className="auth">
+    <AuthShell>
       <div className="card stack">
         <Brand title="Recuperar acesso" />
         {done ? (
@@ -208,7 +223,7 @@ export function ResetPassword() {
             }}
           >
             <Field label="Telemóvel">
-              <input inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+              <PhoneInput value={phone} onChange={setPhone} />
             </Field>
             <ErrorBox error={a.error} />
             <Button busy={a.busy}>Enviar código</Button>
@@ -228,7 +243,7 @@ export function ResetPassword() {
               <input inputMode="numeric" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} required />
             </Field>
             <Field label="Nova palavra-passe" hint="8 ou mais caracteres, com letras e números">
-              <input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <PasswordInput autoComplete="new-password" value={password} onChange={setPassword} />
             </Field>
             <ErrorBox error={a.error} />
             <Button busy={a.busy}>Alterar palavra-passe</Button>
@@ -238,6 +253,6 @@ export function ResetPassword() {
           Voltar ao início de sessão
         </Link>
       </div>
-    </div>
+    </AuthShell>
   );
 }

@@ -1,5 +1,7 @@
 // LevaGo para Android: abre o site oficial (Cliente, Estafeta e Admin) num ecrã próprio,
 // com as cores da marca, envio de documentos e ecrã sem rede. A app não mostra mapas.
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -56,6 +58,21 @@ class _SiteScreenState extends State<SiteScreen> {
   bool _loading = true;
   bool _offline = false;
   int _progress = 0;
+  Timer? _watchdog;
+
+  /// Se a página não abrir em 30 segundos, mostra o ecrã «Sem ligação» com «Tentar de novo».
+  void _armWatchdog() {
+    _watchdog?.cancel();
+    _watchdog = Timer(const Duration(seconds: 30), () {
+      if (mounted && _loading) setState(() => _offline = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _watchdog?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -65,11 +82,17 @@ class _SiteScreenState extends State<SiteScreen> {
       ..setBackgroundColor(Colors.white)
       ..setNavigationDelegate(NavigationDelegate(
         onProgress: (p) => setState(() => _progress = p),
-        onPageStarted: (_) => setState(() {
-          _loading = true;
-          _offline = false;
-        }),
-        onPageFinished: (_) => setState(() => _loading = false),
+        onPageStarted: (_) {
+          _armWatchdog();
+          setState(() {
+            _loading = true;
+            _offline = false;
+          });
+        },
+        onPageFinished: (_) {
+          _watchdog?.cancel();
+          setState(() => _loading = false);
+        },
         onWebResourceError: (e) {
           if (e.isForMainFrame ?? true) setState(() => _offline = true);
         },
@@ -102,6 +125,9 @@ class _SiteScreenState extends State<SiteScreen> {
     // «LevaGoApp» no user agent: o site sabe que está na app, mesmo sem o parâmetro.
     final ua = await _web.getUserAgent();
     await _web.setUserAgent('${ua ?? ''} LevaGoApp/2.0'.trim());
+    // Limpa ficheiros antigos guardados pela WebView: cada abertura usa a versão publicada do site.
+    await _web.clearCache();
+    _armWatchdog();
     await _web.loadRequest(Uri.parse(LevaGoApp.siteUrl));
   }
 
@@ -149,7 +175,11 @@ class _SiteScreenState extends State<SiteScreen> {
                     backgroundColor: navy.withValues(alpha: 0.15),
                   ),
                 ),
-              if (_offline) Positioned.fill(child: _OfflineView(onRetry: () => _web.reload())),
+              if (_offline) Positioned.fill(child: _OfflineView(onRetry: () {
+                setState(() => _offline = false);
+                _armWatchdog();
+                _web.loadRequest(Uri.parse(LevaGoApp.siteUrl));
+              })),
             ],
           ),
         ),

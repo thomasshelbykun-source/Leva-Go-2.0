@@ -108,10 +108,24 @@ export function Field({ label, error, hint, children }: { label: string; error?:
 }
 
 export function Loading({ text = 'A carregar…' }: { text?: string }) {
+  // Se a rede estiver lenta ou falhar, a pessoa não fica presa a olhar para o círculo.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setSlow(true), 12_000);
+    return () => window.clearTimeout(t);
+  }, []);
   return (
     <div className="state" role="status">
       <div className="spinner" />
       <p>{text}</p>
+      {slow && (
+        <>
+          <p className="small">Está a demorar mais do que o normal. Verifique a internet.</p>
+          <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>
+            Tentar de novo
+          </button>
+        </>
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { HeroSheet } from '../shared/Hero';
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Avatar, Icon, Logo } from '../shared/brand';
@@ -12,30 +13,29 @@ import {
 export function Welcome() {
   const cfg = useConfig();
   return (
-    <div className="welcome-hero welcome-cliente">
-      <div className="welcome-top">
-        <Logo size={46} light slogan />
+    <HeroSheet img="cliente">
+      <div className="hs-head">
+        <h1 className="hs-title">A tua encomenda, entregue hoje.</h1>
+        <p className="hs-sub">Em toda a cidade de Quelimane, até 15 kg.</p>
       </div>
-      <div className="welcome-bottom">
-        <h2>Entregas rápidas e seguras em Quelimane!</h2>
-        <ul className="bullets">
-          <li>Em toda a cidade de Quelimane, até 15 kg.</li>
-          <li>Planos com encomendas incluídas. Acompanha a entrega em tempo real.</li>
-        </ul>
-        {cfg && (
-          <p className="small">
-            Horário: {cfg.hours.map((h) => `${WEEKDAYS[h.weekday]!.slice(0, 3)} ${h.opens_at}-${h.closes_at}`).join(' · ')}
-          </p>
-        )}
-        <ButtonLink to="/cliente/registo">Criar conta</ButtonLink>
-        <ButtonLink to="/cliente/entrar" kind="outline">
-          Entrar
-        </ButtonLink>
-        <p className="small center">
-          <Icon name="pin" size={16} /> Quelimane, Moçambique · <Link to="/">Mudar de área</Link>
+      <ul className="ticks">
+        <li>Planos com encomendas incluídas</li>
+        <li>Acompanha a entrega em tempo real</li>
+        <li>Paga com M-Pesa ou e-Mola</li>
+      </ul>
+      {cfg && (
+        <p className="small">
+          Horário: {cfg.hours.map((h) => `${WEEKDAYS[h.weekday]!.slice(0, 3)} ${h.opens_at}-${h.closes_at}`).join(' · ')}
         </p>
-      </div>
-    </div>
+      )}
+      <ButtonLink to="/cliente/registo">Criar conta</ButtonLink>
+      <ButtonLink to="/cliente/entrar" kind="secondary">
+        Já tenho conta
+      </ButtonLink>
+      <p className="small center">
+        <Icon name="pin" size={16} /> Quelimane, Moçambique · <Link to="/">Mudar de área</Link>
+      </p>
+    </HeroSheet>
   );
 }
 
