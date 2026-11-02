@@ -3,7 +3,8 @@
 // Corre a API real com uma base Postgres nova e temporária.
 // Uso: TEST_DATABASE_URL=postgres://postgres@localhost:5432/postgres npm run test:e2e
 import { spawn, execFileSync } from 'node:child_process';
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
+import http from 'node:http';
 import pg from 'pg';
 
 const PORT = 8799;
@@ -40,7 +41,44 @@ async function register(name, phone, app = 'cliente') {
 }
 const login = async (phone, app) => (await api('POST', '/auth/login', { body: { phone, password: 'segredo123', app } })).data.token;
 
+
+// Servidor falso da Pagar: valida a assinatura HMAC e guarda os pagamentos.
+const PAGAR_PORT = 8798;
+const PAGAR = { key: 'sk_test_e2e', signing: 'assinatura-teste', webhook: 'webhook-teste' };
+const pagarPayments = new Map();
+let pagarBadSignatures = 0;
+const pagarServer = http.createServer(async (req, res) => {
+  let raw = '';
+  for await (const ch of req) raw += ch;
+  const send = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+  if (req.headers.authorization !== `Bearer ${PAGAR.key}`) return send(401, { error: 'unauthorized' });
+  const url = new URL(req.url, 'http://x');
+  if (req.method === 'POST' && url.pathname === '/api/v1/payments') {
+    const ts = req.headers['x-pagar-timestamp'];
+    const nonce = req.headers['x-pagar-nonce'];
+    const canonical = [ts, nonce, 'POST', url.pathname, createHash('sha256').update(raw).digest('hex')].join('\n');
+    const expected = 'v1=' + createHmac('sha256', PAGAR.signing).update(canonical).digest('hex');
+    if (req.headers['x-pagar-signature'] !== expected || !req.headers['idempotency-key']) { pagarBadSignatures++; return send(401, { error: 'bad_signature' }); }
+    const b = JSON.parse(raw);
+    const existing = [...pagarPayments.values()].find((p) => p.reference === b.reference);
+    if (existing) return send(202, { payment: existing });
+    const payment = { id: `pay_${randomBytes(6).toString('hex')}`, status: 'PROCESSING', amountMzn: b.amountMzn, method: b.method, reference: b.reference, payerPhone: b.payerPhone, environment: 'TEST' };
+    pagarPayments.set(payment.id, payment);
+    return send(202, { payment });
+  }
+  const m = url.pathname.match(/^\/api\/v1\/payments\/([\w-]+)$/);
+  if (req.method === 'GET' && m && pagarPayments.has(m[1])) return send(200, { payment: pagarPayments.get(m[1]) });
+  send(404, { error: 'not_found' });
+});
+const pagarWebhook = (payment, eventId, secret = PAGAR.webhook) => {
+  const raw = JSON.stringify({ id: eventId, type: `payment.${payment.status.toLowerCase()}`, data: { payment } });
+  const t = Math.floor(Date.now() / 1000);
+  const sig = createHmac('sha256', secret).update(`${t}.${raw}`).digest('hex');
+  return fetch(`${BASE}/payments/webhook/pagar`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Pagar-Event-Id': eventId, 'Pagar-Signature': `t=${t},v1=${sig}` }, body: raw });
+};
+
 async function main() {
+  await new Promise((r) => pagarServer.listen(PAGAR_PORT, '127.0.0.1', r));
   console.log('Preparar base de dados local…');
   await adminSql(ADMIN_URL, `CREATE DATABASE ${DB_NAME}`);
   execFileSync('npx', ['tsx', 'scripts/migrate.ts', '--seed'], { stdio: 'pipe', env: { ...process.env, DATABASE_URL: dbUrl } });
@@ -48,7 +86,7 @@ async function main() {
   const dev = spawn('npx', ['tsx', 'scripts/dev.ts'], {
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
-    env: { ...process.env, DATABASE_URL: dbUrl, PORT: String(PORT), ENVIRONMENT: 'test', PAYMENTS_WEBHOOK_SECRET: 'segredo-teste', CORS_ORIGINS: 'http://localhost:5173' },
+    env: { ...process.env, DATABASE_URL: dbUrl, PORT: String(PORT), ENVIRONMENT: 'test', PAYMENTS_WEBHOOK_SECRET: 'segredo-teste', PAGAR_API_BASE_URL: `http://127.0.0.1:${PAGAR_PORT}/api/v1`, PAGAR_API_KEY: PAGAR.key, PAGAR_SIGNING_SECRET: PAGAR.signing, PAGAR_WEBHOOK_SECRET: PAGAR.webhook, CORS_ORIGINS: 'http://localhost:5173' },
   });
   let log = '';
   dev.stdout.on('data', (d) => (log += d));
@@ -209,6 +247,26 @@ async function main() {
     const csv = await fetch(`${BASE}/admin/orders/export.csv`, { headers: { authorization: `Bearer ${adminToken}` } });
     ok(csv.headers.get('content-type')?.startsWith('text/csv') && (await csv.text()).includes(o1.data.code), 'exportação CSV');
 
+
+    console.log('Pagamentos M-Pesa pela Pagar (servidor falso)');
+    const curPay = (await api('GET', '/admin/settings', { token: adminToken })).data.settings.find((x) => x.key === 'payments')?.value ?? {};
+    const payVal = { ...curPay, mpesa_enabled: true, emola_enabled: true, sandbox_enabled: true };
+    ok((await api('PUT', '/admin/settings/payments', { token: adminToken, body: { value: payVal, reason: 'Ligar M-Pesa e e-Mola pela Pagar' } })).status === 200, 'super-admin liga M-Pesa e e-Mola');
+    const mq = await api('POST', '/quotes', { token: cli.token, body: { pickup: A, dropoff: B, weight_kg: 1, service_type: 'normal' } });
+    const mo = await api('POST', '/orders', { token: cli.token, body: { ...orderBody, quote_id: mq.data.quote_id, payment_method: 'mpesa' }, idem: 'pedido-mpesa-1' });
+    ok(mo.status === 201 && mo.data.status === 'AGUARDA_PAGAMENTO', 'encomenda M-Pesa aguarda pagamento');
+    const mpi = await api('POST', '/payments/intents', { token: cli.token, body: { order_id: mo.data.id, provider: 'mpesa', msisdn: '840000001' }, idem: 'pag-mpesa-1' });
+    ok(mpi.status === 201 || mpi.status === 200, `cobrança enviada à Pagar (${mpi.status})`);
+    ok(pagarBadSignatures === 0 && pagarPayments.size === 1, 'a Pagar aceitou a assinatura HMAC');
+    const pp = [...pagarPayments.values()][0];
+    ok(pp && pp.payerPhone === '840000001' && pp.method === 'MPESA' && Number.isInteger(pp.amountMzn), 'número local, método e valor inteiro certos');
+    ok(pp.reference === mpi.data.id, 'referência é a tentativa de pagamento');
+    pp.status = 'PAID';
+    ok((await pagarWebhook(pp, 'evt_falso', 'segredo-errado')).status === 401, 'webhook com assinatura errada é recusado');
+    ok((await api('GET', `/orders/${mo.data.id}`, { token: cli.token })).data.status === 'AGUARDA_PAGAMENTO', 'assinatura errada não muda nada');
+    ok((await pagarWebhook(pp, 'evt_1')).status === 200, 'webhook válido aceite');
+    ok((await api('GET', `/orders/${mo.data.id}`, { token: cli.token })).data.status === 'PENDENTE_ATRIBUICAO', 'PAID confirma a encomenda');
+    ok((await pagarWebhook(pp, 'evt_1')).status === 200 && (await api('GET', `/orders/${mo.data.id}`, { token: cli.token })).data.status === 'PENDENTE_ATRIBUICAO', 'evento repetido não tem segundo efeito');
     console.log('Planos, Expressa e créditos expressos');
     const pc = await register('Paula Plano', '844000002');
     const p_h0 = await api('GET', '/home', { token: pc.token });

@@ -10,6 +10,7 @@ import auth from './routes/auth.js';
 import courier from './routes/courier.js';
 import customer from './routes/customer.js';
 import payments from './routes/payments.js';
+import { pagarReady } from './lib/pagar.js';
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -25,6 +26,10 @@ export function loadEnv(): Env {
     ROUTING_OSRM_URL: e.ROUTING_OSRM_URL ?? 'https://router.project-osrm.org',
     GEOCODER_URL: e.GEOCODER_URL ?? 'https://nominatim.openstreetmap.org',
     PAYMENTS_WEBHOOK_SECRET: e.PAYMENTS_WEBHOOK_SECRET,
+    PAGAR_API_BASE_URL: e.PAGAR_API_BASE_URL,
+    PAGAR_API_KEY: e.PAGAR_API_KEY,
+    PAGAR_SIGNING_SECRET: e.PAGAR_SIGNING_SECRET,
+    PAGAR_WEBHOOK_SECRET: e.PAGAR_WEBHOOK_SECRET,
     SMS_PROVIDER_URL: e.SMS_PROVIDER_URL,
     SMS_PROVIDER_KEY: e.SMS_PROVIDER_KEY,
   };
@@ -90,8 +95,9 @@ app.get('/v1/config', async (c) => {
     open_now: now.ok,
     zones: zones.map((z) => ({ ...z, polygon: parseJson(z.polygon, []) })),
     payment_methods: {
-      mpesa: pay.mpesa_enabled,
-      emola: pay.emola_enabled,
+      // M-Pesa e e-Mola só aparecem com a Pagar configurada e o método ligado pelo Admin.
+      mpesa: pay.mpesa_enabled && pagarReady(c.env),
+      emola: pay.emola_enabled && pagarReady(c.env),
       sandbox: pay.sandbox_enabled && c.env.ENVIRONMENT !== 'production',
       na_entrega: pay.pay_on_delivery_enabled,
     },

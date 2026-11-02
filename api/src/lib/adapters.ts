@@ -1,4 +1,5 @@
 // Adaptadores de integrações externas. Cada um pode ser trocado sem mexer nas regras de negócio.
+import { mapPagarStatus, pagarCharge, pagarReady } from './pagar.js';
 import { ApiError, type Env } from './core.js';
 
 // ------------------------------------------------------------------ Rotas por estrada
@@ -101,13 +102,26 @@ export async function sendOtp(env: Env, phone: string, code: string): Promise<{ 
 export type PaymentProvider = 'mpesa' | 'emola' | 'sandbox';
 
 /**
- * Inicia a cobrança no provedor. M-Pesa e e-Mola ficam desligados até existir acesso oficial
- * às APIs (pendência 14.3). Em staging usa-se o provedor "sandbox", confirmado por webhook simulado.
+ * Inicia a cobrança no provedor. M-Pesa e e-Mola passam pela Pagar API (pagar.co.mz).
+ * Sem chaves da Pagar, os dois métodos ficam desligados. Fora de produção existe o provedor "sandbox".
  */
-export async function startCharge(env: Env, provider: PaymentProvider, intent: { id: string; amount_cents: number; msisdn: string }) {
+export async function startCharge(
+  env: Env,
+  provider: PaymentProvider,
+  intent: { id: string; amount_cents: number; msisdn: string; title: string; description: string },
+): Promise<{ provider_ref: string; status?: 'succeeded' | 'failed' | null; reason?: string | null }> {
   if (provider === 'sandbox') {
     if (env.ENVIRONMENT === 'production') throw new ApiError(400, 'metodo_indisponivel', 'Pagamento de teste não disponível em produção.');
     return { provider_ref: `SBX-${intent.id.slice(0, 8)}` };
   }
-  throw new ApiError(503, 'metodo_indisponivel', `${provider === 'mpesa' ? 'M-Pesa' : 'e-Mola'} ainda não está disponível. A integração oficial está pendente.`);
+  if (!pagarReady(env)) throw new ApiError(503, 'metodo_indisponivel', `${provider === 'mpesa' ? 'M-Pesa' : 'e-Mola'} ainda não está disponível.`);
+  const payment = await pagarCharge(env, {
+    reference: intent.id,
+    title: intent.title,
+    description: intent.description,
+    amountMzn: intent.amount_cents / 100,
+    method: provider === 'mpesa' ? 'MPESA' : 'EMOLA',
+    msisdn: intent.msisdn,
+  });
+  return { provider_ref: payment.id, status: mapPagarStatus(payment.status), reason: payment.safeMessage ?? payment.failureReason ?? null };
 }

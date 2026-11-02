@@ -1,6 +1,8 @@
 import type { Db, Stmt } from '../lib/db.js';
 import { Hono } from 'hono';
 import { reversePlace, roadRoute, searchPlaces, startCharge } from '../lib/adapters.js';
+import { applyPaymentEvent, refreshFromPagar } from './payments.js';
+import { pagarReady } from '../lib/pagar.js';
 import {
   addMinutes, all, ApiError, bad, conflict, getSetting, need, normalizePhone, notFound, nowIso, one, parseJson, run, uuid, v,
   type Env, type Vars,
@@ -290,7 +292,7 @@ r.post('/orders', async (c) => {
     status = 'PENDENTE_ATRIBUICAO';
     paymentStatus = 'collect_on_delivery';
   } else {
-    const enabled = { mpesa: pay.mpesa_enabled, emola: pay.emola_enabled, sandbox: pay.sandbox_enabled && c.env.ENVIRONMENT !== 'production', subscricao: false } as Record<string, boolean>;
+    const enabled = { mpesa: pay.mpesa_enabled && pagarReady(c.env), emola: pay.emola_enabled && pagarReady(c.env), sandbox: pay.sandbox_enabled && c.env.ENVIRONMENT !== 'production', subscricao: false } as Record<string, boolean>;
     if (!enabled[b.payment_method]) throw bad('metodo_indisponivel', 'Este método de pagamento ainda não está disponível.');
     status = 'AGUARDA_PAGAMENTO';
     paymentStatus = 'pending';
@@ -480,6 +482,8 @@ r.post('/payments/intents', async (c) => {
   if (existing) return c.json(existing);
 
   let amount = 0;
+  let title = 'LevaGo';
+  let description = 'Serviço de entrega';
   if (b.order_id) {
     const o = await one<OrderRow>(c.env.DB, "SELECT * FROM orders WHERE id = ? AND customer_id = ?", b.order_id, u.id);
     if (!o) throw notFound();
@@ -488,29 +492,43 @@ r.post('/payments/intents', async (c) => {
     const open = await one(c.env.DB, "SELECT id FROM payment_intents WHERE order_id = ? AND status IN ('pending','succeeded')", o.id);
     if (open) throw conflict('pagamento_em_curso', 'Já existe um pagamento em curso para este pedido. Aguarde a confirmação.');
     amount = o.price_cents;
+    title = `LevaGo: encomenda ${o.code}`;
+    description = o.order_kind === 'recolha' ? 'Serviço de recolha e entrega em Quelimane' : 'Serviço de entrega em Quelimane';
   } else if (b.subscription_id) {
     const s = await one<{ id: string; status: string; plan_snapshot: string }>(c.env.DB, 'SELECT * FROM subscriptions WHERE id = ? AND customer_id = ?', b.subscription_id, u.id);
     if (!s || s.status !== 'pending_payment') throw conflict('pagamento_desnecessario', 'Esta subscrição não aguarda pagamento.');
     const open = await one(c.env.DB, "SELECT id FROM payment_intents WHERE subscription_id = ? AND status IN ('pending','succeeded')", s.id);
     if (open) throw conflict('pagamento_em_curso', 'Já existe um pagamento em curso para esta subscrição.');
-    amount = parseJson<{ price_cents: number }>(s.plan_snapshot, { price_cents: 0 }).price_cents;
+    const plan = parseJson<{ price_cents: number; name?: string }>(s.plan_snapshot, { price_cents: 0 });
+    amount = plan.price_cents;
+    title = `LevaGo: plano ${plan.name ?? ''}`.trim();
+    description = 'Plano de encomendas LevaGo';
   } else throw bad('pagamento', 'Indique o pedido ou a subscrição.');
 
+  // A carteira móvel só aceita meticais inteiros: arredonda para baixo, a favor do cliente.
+  if (b.provider !== 'sandbox') amount = Math.floor(amount / 100) * 100;
   const id = uuid();
   const msisdn = normalizePhone(b.msisdn)!;
-  const charge = await startCharge(c.env, b.provider, { id, amount_cents: amount, msisdn });
+  const charge = await startCharge(c.env, b.provider, { id, amount_cents: amount, msisdn, title, description });
   await run(
     c.env.DB,
     'INSERT INTO payment_intents (id, customer_id, order_id, subscription_id, provider, amount_cents, msisdn, provider_ref, idempotency_key) VALUES (?,?,?,?,?,?,?,?,?)',
     id, u.id, b.order_id ?? null, b.subscription_id ?? null, b.provider, amount, msisdn, charge.provider_ref, idem,
   );
+  // O provedor pode recusar logo (ex.: número inválido). Passa pelo mesmo código do webhook.
+  if (charge.status === 'failed')
+    await applyPaymentEvent(c.env.DB, { event_id: `create-${id}`, intent_id: id, status: 'failed', amount_cents: amount, reason: charge.reason ?? undefined }, '{}');
   return c.json(await one(c.env.DB, 'SELECT id, provider, status, amount_cents, provider_ref, created_at FROM payment_intents WHERE id = ?', id), 201);
 });
 
 r.get('/payments/intents/:id', async (c) => {
   const u = requireRole(c, 'customer');
-  const pi = await one(c.env.DB, 'SELECT id, provider, status, amount_cents, failure_reason, order_id, subscription_id FROM payment_intents WHERE id = ? AND customer_id = ?', c.req.param('id'), u.id);
+  const sql = 'SELECT id, provider, status, amount_cents, failure_reason, order_id, subscription_id, provider_ref, created_at FROM payment_intents WHERE id = ? AND customer_id = ?';
+  let pi = await one<{ id: string; provider: string; status: string; provider_ref: string | null }>(c.env.DB, sql, c.req.param('id'), u.id);
   if (!pi) throw notFound();
+  // Se o webhook se perdeu, consulta a Pagar enquanto o cliente espera (no máximo a cada 12 s).
+  if (pi.status === 'pending' && pi.provider !== 'sandbox' && pi.provider_ref && (await refreshFromPagar(c.env, pi.id, pi.provider_ref)))
+    pi = await one(c.env.DB, sql, c.req.param('id'), u.id);
   return c.json(pi);
 });
 
