@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { setToken } from './api';
 import { Button, ErrorBox, Field, Notice, useAction } from './ui';
 import { useSession } from './session';
 import { Logo } from './brand';
@@ -34,7 +35,13 @@ export function Login() {
   const a = useAction();
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const r = await a.run(() => s.api.post<{ token: string }>('/auth/login', { phone, password, app: s.app }));
+    const r = await a.run(() => s.api.post<{ token: string; app?: string }>('/auth/login', { phone, password, app: s.app }));
+    if (r && r.app === 'admin' && s.app !== 'admin') {
+      // Conta de Admin no login de Estafeta: abre o painel.
+      setToken('admin', r.token);
+      window.location.assign('/admin');
+      return;
+    }
     if (r) {
       await s.signIn(r.token);
       nav(loc.state?.from ?? s.base, { replace: true });

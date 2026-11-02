@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { MapView } from '../shared/map';
+import { IN_APP } from '../shared/inapp';
 import { useSession } from '../shared/session';
 import { Button, Field, Notice } from '../shared/ui';
 
@@ -67,7 +68,7 @@ export function LocationPicker({ label, value, onChange, kind }: { label: string
     if (!navigator.geolocation) return setMsg('Este dispositivo não indica a localização.');
     navigator.geolocation.getCurrentPosition(
       (p) => void choose(p.coords.latitude, p.coords.longitude),
-      () => setMsg('Não foi possível obter a localização. Autorize o acesso ou toque no mapa.'),
+      () => setMsg('Não foi possível obter a localização. Autorize o acesso ou escreva o endereço.'),
       { enableHighAccuracy: true, timeout: 10000 },
     );
   };
@@ -100,7 +101,7 @@ export function LocationPicker({ label, value, onChange, kind }: { label: string
       )}
       <MapView height={220} markers={base ? [{ lat: base.lat, lon: base.lon, kind }] : []} onClick={(lat, lon) => void choose(lat, lon)} />
       <div className="row-between">
-        <small>Toque no mapa para marcar o ponto exacto.</small>
+        <small>{IN_APP ? 'Escreva o endereço e escolha uma sugestão.' : 'Toque no mapa para marcar o ponto exacto.'}</small>
         {kind === 'pickup' && (
           <Button type="button" kind="secondary" onClick={here}>
             Usar a minha localização

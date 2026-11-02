@@ -110,9 +110,11 @@ auth.post('/login', async (c) => {
   if (body.app === 'admin' && !APP_ROLES.admin.some((r) => roles.includes(r)))
     throw new ApiError(403, 'sem_acesso_admin', 'Esta conta não tem acesso ao painel administrativo. Use a área de Cliente ou de Estafeta.');
   await run(c.env.DB, 'UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?', u.id);
-  if (body.app === 'admin') await c.env.DB.batch([auditStmt(c.env.DB, { id: u.id, role: 'admin' }, 'login', 'session', null)]);
-  const session = await createSession(c.env.DB, u.id, body.app);
-  return c.json({ ...session, user: { id: u.id, name: u.name, phone: u.phone, roles } });
+  // O Admin não tem entrada própria na página inicial: entra pelo login de Estafeta e vai para o painel.
+  const app: AppName = body.app === 'estafeta' && APP_ROLES.admin.some((r) => roles.includes(r)) ? 'admin' : body.app;
+  if (app === 'admin') await c.env.DB.batch([auditStmt(c.env.DB, { id: u.id, role: 'admin' }, 'login', 'session', null)]);
+  const session = await createSession(c.env.DB, u.id, app);
+  return c.json({ ...session, app, user: { id: u.id, name: u.name, phone: u.phone, roles } });
 });
 
 auth.post('/logout', async (c) => {

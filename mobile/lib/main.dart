@@ -1,5 +1,5 @@
 // LevaGo para Android: abre o site oficial (Cliente, Estafeta e Admin) num ecrã próprio,
-// com as cores da marca, mapa com localização, envio de documentos e ecrã sem rede.
+// com as cores da marca, envio de documentos e ecrã sem rede. A app não mostra mapas.
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -26,7 +26,8 @@ class LevaGoApp extends StatelessWidget {
   const LevaGoApp({super.key});
 
   /// Site publicado. Cliente, Estafeta e Admin estão no mesmo endereço.
-  static const siteUrl = 'https://levago-three.vercel.app/';
+  /// «app=android» diz ao site que está dentro da app (sem mapas).
+  static const siteUrl = 'https://levago-three.vercel.app/?app=android';
   static const ownHosts = {'levago-three.vercel.app', 'levago-api.vercel.app'};
 
   @override
@@ -94,7 +95,14 @@ class _SiteScreenState extends State<SiteScreen> {
         },
       );
     }
-    _web.loadRequest(Uri.parse(LevaGoApp.siteUrl));
+    _start();
+  }
+
+  Future<void> _start() async {
+    // «LevaGoApp» no user agent: o site sabe que está na app, mesmo sem o parâmetro.
+    final ua = await _web.getUserAgent();
+    await _web.setUserAgent('${ua ?? ''} LevaGoApp/2.0'.trim());
+    await _web.loadRequest(Uri.parse(LevaGoApp.siteUrl));
   }
 
   /// Documentos do estafeta e fotos: o site pede um ficheiro, a app abre o seletor do telemóvel.

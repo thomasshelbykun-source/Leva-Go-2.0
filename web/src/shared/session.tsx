@@ -59,7 +59,8 @@ export function SessionProvider({ app, base, children }: { app: AppName; base: s
 
   // Tema escolhido no perfil.
   useEffect(() => {
-    document.documentElement.dataset.theme = me?.theme && me.theme !== 'system' ? me.theme : '';
+    // Claro por defeito. Escuro só quando o utilizador escolhe «Escuro» no perfil.
+    document.documentElement.dataset.theme = me?.theme === 'dark' ? 'dark' : 'light';
   }, [me?.theme]);
 
   const value: SessionCtx = {
@@ -99,9 +100,11 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const loc = useLocation();
   if (s.loading) return <Loading />;
   if (!s.me) {
+    // O painel Admin não tem login próprio: usa o login de Estafeta.
+    if (s.app === 'admin') return <Navigate to="/estafeta/entrar" replace />;
     // Na raiz da app Cliente, quem não tem sessão vê primeiro as boas-vindas.
     const atRoot = loc.pathname.replace(/\/$/, '') === s.base;
-    const target = atRoot && s.app !== 'admin' ? 'boas-vindas' : 'entrar';
+    const target = atRoot ? 'boas-vindas' : 'entrar';
     return <Navigate to={`${s.base}/${target}`} replace state={{ from: atRoot ? undefined : loc.pathname }} />;
   }
   return <>{children}</>;

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { Avatar, Icon, Logo, type IconName } from '../shared/brand';
-import { Login, ResetPassword } from '../shared/Auth';
+import { ResetPassword } from '../shared/Auth';
 import { RequireAuth, SessionProvider, useSession } from '../shared/session';
 import { Pricing, Payments, Reports, Settings, Subscriptions, TicketDetail, Tickets, Zones } from './Business';
 import { AdminOrderDetail, AdminOrders, CourierDetail, Couriers, CustomerDetail, Customers, Dashboard } from './Operations';
@@ -85,7 +85,7 @@ export default function AdminApp() {
   return (
     <SessionProvider app="admin" base={BASE}>
       <Routes>
-        <Route path="entrar" element={<Login />} />
+        <Route path="entrar" element={<Navigate to="/estafeta/entrar" replace />} />
         <Route path="recuperar" element={<ResetPassword />} />
         <Route
           element={

@@ -25,26 +25,6 @@
   font-size: 16px;
   line-height: 1.45;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --bg: #0b1424;
-    --surface: #13213a;
-    --surface-2: #1b2c4a;
-    --text: #e8eef7;
-    --muted: #9aabc4;
-    --line: #26385a;
-    --ok-bg: #12351f;
-    --ok: #86efac;
-    --warn-bg: #3d2a0a;
-    --warn: #fcd34d;
-    --bad-bg: #3b1212;
-    --bad: #fca5a5;
-    --info-bg: #142a52;
-    --info: #93c5fd;
-    --orange-ink: #ffb25c;
-    color-scheme: dark;
-  }
-}
 :root[data-theme='dark'] {
   --bg: #0b1424;
   --surface: #13213a;
@@ -180,7 +160,6 @@ input:disabled { opacity: 0.6; }
 
 .price { font-size: 1.7rem; font-weight: 800; color: var(--navy); }
 :root[data-theme='dark'] .price { color: var(--orange); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .price { color: var(--orange); } }
 
 .steps { display: flex; list-style: none; padding: 0; margin: 0; gap: 0.3rem; counter-reset: s; }
 .steps li { flex: 1; text-align: center; font-size: 0.78rem; color: var(--muted); border-top: 4px solid var(--line); padding-top: 0.3rem; }
@@ -226,7 +205,6 @@ input:disabled { opacity: 0.6; }
 .brand { text-align: center; margin-bottom: 0.3rem; }
 .area-switch { margin-top: 0.3rem; }
 :root[data-theme='dark'] .welcome h1, :root[data-theme='dark'] .brand h1 { color: #fff; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .welcome h1, :root:not([data-theme='light']) .brand h1 { color: #fff; } }
 
 .hero { display: flex; gap: 0.9rem; align-items: center; padding: 1.1rem; border-radius: var(--radius); background: var(--navy); color: #fff; text-decoration: none; }
 .hero span { font-size: 2rem; }
@@ -243,7 +221,6 @@ input:disabled { opacity: 0.6; }
 .logo-slogan { color: inherit; font-weight: 600; font-size: 0.82rem; }
 .logo-light .logo-slogan { color: #fff; }
 :root[data-theme='dark'] .logo:not(.logo-light) .logo-leva { color: #fff; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .logo:not(.logo-light) .logo-leva { color: #fff; } }
 .icon { flex: none; }
 .avatar { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: var(--orange); color: #fff; font-weight: 700; flex: none; }
 

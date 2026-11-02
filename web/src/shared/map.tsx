@@ -1,3 +1,4 @@
+import { IN_APP } from './inapp';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useRef } from 'react';
@@ -51,6 +52,19 @@ export function MapView({
   route?: { type: string; coordinates: [number, number][] } | null;
   polygons?: { polygon: [number, number][]; kind: string; name?: string }[];
   height?: number;
+  onClick?: (lat: number, lon: number) => void;
+}) {
+  if (IN_APP) return null;
+  return <LeafletMap markers={markers} route={route} polygons={polygons} height={height} onClick={onClick} />;
+}
+
+function LeafletMap({
+  markers, route, polygons, height, onClick,
+}: {
+  markers: MapMarker[];
+  route?: { type: string; coordinates: [number, number][] } | null;
+  polygons: { polygon: [number, number][]; kind: string; name?: string }[];
+  height: number;
   onClick?: (lat: number, lon: number) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);

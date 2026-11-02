@@ -38,9 +38,8 @@ function Legal({ kind }: { kind: 'termos' | 'privacidade' }) {
 }
 
 const AREAS = [
-  { to: '/cliente', icon: 'box', title: 'Cliente', text: 'Envie encomendas, pague e acompanhe no mapa.', cta: 'Enviar uma encomenda' },
+  { to: '/cliente', icon: 'box', title: 'Cliente', text: 'Envie encomendas, pague e acompanhe a entrega.', cta: 'Enviar uma encomenda' },
   { to: '/estafeta', icon: 'scooter', title: 'Estafeta', text: 'Aceite pedidos, faça entregas e veja os seus ganhos.', cta: 'Entrar como estafeta' },
-  { to: '/admin', icon: 'dashboard', title: 'Admin', text: 'Gestão da plataforma: encomendas, estafetas, tarifas e relatórios.', cta: 'Abrir o painel' },
 ] as const;
 
 function Landing() {

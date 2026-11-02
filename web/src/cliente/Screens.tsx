@@ -20,7 +20,7 @@ export function Welcome() {
         <h2>Entregas rápidas e seguras em Quelimane!</h2>
         <ul className="bullets">
           <li>Em toda a cidade de Quelimane, até 15 kg.</li>
-          <li>Planos com encomendas incluídas. Acompanha no mapa.</li>
+          <li>Planos com encomendas incluídas. Acompanha a entrega em tempo real.</li>
         </ul>
         {cfg && (
           <p className="small">
@@ -365,8 +365,7 @@ export function Profile({ base }: { base: string }) {
             <input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
           </Field>
           <Field label="Tema">
-            <select value={f.theme} onChange={(e) => setF({ ...f, theme: e.target.value as typeof f.theme })}>
-              <option value="system">Automático</option>
+            <select value={f.theme === 'dark' ? 'dark' : 'light'} onChange={(e) => setF({ ...f, theme: e.target.value as typeof f.theme })}>
               <option value="light">Claro</option>
               <option value="dark">Escuro</option>
             </select>
