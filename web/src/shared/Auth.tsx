@@ -69,17 +69,14 @@ export function Login() {
           <small>Gestão da LevaGo</small>
         </div>
       ) : (
-        <Brand
-          title={s.app === 'estafeta' ? 'Entrar como estafeta' : 'Bem-vindo de volta'}
-          sub={s.app === 'estafeta' ? 'Use o número registado na LevaGo.' : 'Entre com o seu número de telemóvel.'}
-        />
+        <Brand title={s.app === 'estafeta' ? 'Entrar como estafeta' : 'Entrar na tua conta'} />
       )}
       {admin ? (
         <Field label="Email ou telemóvel">
           <input autoComplete="username" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="admin@levago.co.mz" required />
         </Field>
       ) : (
-        <Field label="Número de telefone">
+        <Field label="Número de telefone" hint="Ex.: 84 123 4567">
           <PhoneInput value={phone} onChange={setPhone} />
         </Field>
       )}

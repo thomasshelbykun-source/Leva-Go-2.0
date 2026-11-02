@@ -19,13 +19,13 @@ export function CourierWelcome() {
   return (
     <HeroSheet img="estafeta">
       <div className="hs-head">
-        <h1 className="hs-title">Faz entregas e ganha com a LevaGo.</h1>
+        <h1 className="hs-title">Faz parte da LevaGo</h1>
         <p className="hs-sub">Aplicação do Estafeta</p>
       </div>
       <ul className="ticks">
-        <li>Escolhe os teus horários</li>
-        <li>Recebe pedidos na tua zona</li>
-        <li>Acompanha os teus ganhos</li>
+        <li>Entregas, ganhos e liberdade.</li>
+        <li>Escolhe os teus horários dentro do horário de serviço.</li>
+        <li>Recebe pedidos na tua zona e aumenta os teus ganhos.</li>
       </ul>
       <ButtonLink to="/estafeta/entrar">Entrar</ButtonLink>
       <ButtonLink to="/estafeta/registo" kind="secondary">

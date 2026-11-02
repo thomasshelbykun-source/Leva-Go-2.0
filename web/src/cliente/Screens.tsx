@@ -15,13 +15,11 @@ export function Welcome() {
   return (
     <HeroSheet img="cliente">
       <div className="hs-head">
-        <h1 className="hs-title">A tua encomenda, entregue hoje.</h1>
-        <p className="hs-sub">Em toda a cidade de Quelimane, até 15 kg.</p>
+        <h1 className="hs-title">Entregas rápidas e seguras em Quelimane!</h1>
       </div>
       <ul className="ticks">
-        <li>Planos com encomendas incluídas</li>
-        <li>Acompanha a entrega em tempo real</li>
-        <li>Paga com M-Pesa ou e-Mola</li>
+        <li>Em toda a cidade de Quelimane, até 15 kg.</li>
+        <li>Planos com encomendas incluídas. Acompanha a entrega em tempo real.</li>
       </ul>
       {cfg && (
         <p className="small">
@@ -30,7 +28,7 @@ export function Welcome() {
       )}
       <ButtonLink to="/cliente/registo">Criar conta</ButtonLink>
       <ButtonLink to="/cliente/entrar" kind="secondary">
-        Já tenho conta
+        Entrar
       </ButtonLink>
       <p className="small center">
         <Icon name="pin" size={16} /> Quelimane, Moçambique · <Link to="/">Mudar de área</Link>

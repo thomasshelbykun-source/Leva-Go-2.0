@@ -87,8 +87,8 @@ function Landing() {
   return (
     <HeroSheet img="cliente">
       <div className="hs-head">
-        <h1 className="hs-title">Entregas em Quelimane, sem complicação.</h1>
-        <p className="hs-sub">Envie e receba encomendas de bicicleta ou motorizada. Acompanhe tudo pelo telemóvel.</p>
+        <h1 className="hs-title">Escolha a sua área</h1>
+        <p className="hs-sub">Entregas rápidas e seguras em Quelimane, de bicicleta ou motorizada.</p>
       </div>
       <div className="choice-list">
         <Link to="/cliente" className="choice">
@@ -96,8 +96,8 @@ function Landing() {
             <Icon name="box" size={26} />
           </span>
           <span className="choice-text">
-            <strong>Enviar uma encomenda</strong>
-            <small>Sou cliente</small>
+            <strong>Cliente</strong>
+            <small>Envie encomendas, pague e acompanhe a entrega.</small>
           </span>
           <span className="choice-go" aria-hidden="true">›</span>
         </Link>
@@ -106,8 +106,8 @@ function Landing() {
             <Icon name="scooter" size={26} />
           </span>
           <span className="choice-text">
-            <strong>Fazer entregas</strong>
-            <small>Sou estafeta</small>
+            <strong>Estafeta</strong>
+            <small>Aceite pedidos, faça entregas e veja os seus ganhos.</small>
           </span>
           <span className="choice-go" aria-hidden="true">›</span>
         </Link>
