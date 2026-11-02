@@ -488,3 +488,6 @@ ul.plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.35rem;
 @media (min-width: 820px) {
   .hs-compact .hs-sheet { padding-top: 2.5rem; }
 }
+/* App Android: sem desfoque por trás dos cartões; alguns telemóveis deixam de actualizar o ecrã com ele. */
+.in-app * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+.in-app .hs .choice, .in-app .hs .btn-secondary { background: rgb(13 42 79 / 72%); }

@@ -162,7 +162,13 @@ class _SiteScreenState extends State<SiteScreen> {
         body: SafeArea(
           child: Stack(
             children: [
-              Positioned.fill(child: Container(color: Colors.white, child: WebViewWidget(controller: _web))),
+              Positioned.fill(child: Container(color: Colors.white, child: WebViewWidget.fromPlatformCreationParams(
+                // Alguns telemóveis (ex.: Huawei) não actualizam o ecrã da WebView no modo normal.
+                // A composição híbrida desenha a página directamente e evita o ecrã parado.
+                params: _web.platform is AndroidWebViewController
+                    ? AndroidWebViewWidgetCreationParams(controller: _web.platform, displayWithHybridComposition: true)
+                    : PlatformWebViewWidgetCreationParams(controller: _web.platform),
+              ))),
               if (_loading && _progress < 100)
                 Positioned(
                   top: 0,

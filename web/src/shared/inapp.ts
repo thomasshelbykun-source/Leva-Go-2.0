@@ -12,3 +12,4 @@ function detect(): boolean {
 }
 
 export const IN_APP = typeof window !== 'undefined' && detect();
+if (IN_APP) document.documentElement.classList.add('in-app');
