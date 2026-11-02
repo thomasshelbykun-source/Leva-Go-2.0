@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { newIdempotencyKey } from '../shared/api';
 import { useConfig } from '../shared/config';
 import { CATEGORIES, km, minutes, mt, todayMaputo } from '../shared/format';
 import { MapView } from '../shared/map';
 import { useSession } from '../shared/session';
-import { Button, Card, ErrorBox, Field, KV, Notice, Page, useAction } from '../shared/ui';
+import { Button, Card, ErrorBox, Field, KV, Notice, Page, useAction, useLoad } from '../shared/ui';
 import { LocationPicker, type Point } from './LocationPicker';
 
 interface Quote {
@@ -13,27 +13,41 @@ interface Quote {
   road_distance_m: number;
   estimated_duration_s: number;
   route_geometry: { type: string; coordinates: [number, number][] } | null;
-  breakdown: { base_cents: number; distance_cents: number; weight_cents: number; minimum_adjust_cents: number; subscription_discount_cents?: number; total_cents: number };
+  breakdown: { base_cents: number; distance_cents: number; weight_cents: number; minimum_adjust_cents: number; subscription_discount_cents?: number; express_supplement_cents?: number; plan_unit?: boolean; express_credit?: boolean; total_cents: number };
   total_cents: number;
   covered_by_subscription: boolean;
+  plan_remaining: number;
   service_available_now: boolean;
   hours_message: string | null;
   expires_at: string;
   pricing_version: number;
 }
 
-type Step = 'locais' | 'detalhes' | 'tipo' | 'confirmar';
-const STEPS: [Step, string][] = [['locais', 'Locais'], ['detalhes', 'Encomenda'], ['tipo', 'Serviço'], ['confirmar', 'Preço']];
+type Step = 'estabelecimento' | 'locais' | 'detalhes' | 'tipo' | 'confirmar';
+const STEPS_ENVIO: [Step, string][] = [['locais', 'Locais'], ['detalhes', 'Encomenda'], ['tipo', 'Serviço'], ['confirmar', 'Confirmação']];
+const STEPS_RECOLHA: [Step, string][] = [['estabelecimento', 'Onde'], ['locais', 'Locais'], ['detalhes', 'Entrega'], ['tipo', 'Serviço'], ['confirmar', 'Confirmação']];
+const ESTAB: [string, string][] = [['restaurante', 'Restaurante'], ['farmacia', 'Farmácia'], ['loja', 'Loja / Mercado'], ['outro', 'Outro']];
 
 /** Solicitar entrega: locais → encomenda → modalidade e agendamento → preço e confirmação. */
 export function NewOrder() {
-  const { api } = useSession();
+  const { api, me } = useSession();
   const nav = useNavigate();
   const cfg = useConfig();
-  const [step, setStep] = useState<Step>('locais');
+  const [params] = useSearchParams();
+  const recolha = params.get('tipo') === 'recolha';
+  const STEPS = recolha ? STEPS_RECOLHA : STEPS_ENVIO;
+  const home = useLoad(() => api.get<any>('/home'), []);
+  const plan = home.data && !home.data.needs_plan ? home.data.subscription : null;
+  const supplement = home.data?.express_supplement_cents ?? 15000;
+  const [step, setStep] = useState<Step>(recolha ? 'estabelecimento' : 'locais');
+  const [est, setEst] = useState({ establishment_type: 'restaurante', establishment_name: '', order_ref: '', paid_confirmed: false });
   const [pickup, setPickup] = useState<Point | null>(null);
   const [dropoff, setDropoff] = useState<Point | null>(null);
-  const [d, setD] = useState({ weight_kg: '', category: 'documentos', description: '', recipient_name: '', recipient_phone: '', pickup_contact: '', notes: '' });
+  // Na recolha, a entrega é para o próprio cliente: os dados vêm preenchidos.
+  const [d, setD] = useState({
+    weight_kg: recolha ? '2' : '', category: recolha ? 'compras' : 'documentos', description: '',
+    recipient_name: recolha ? me?.name ?? '' : '', recipient_phone: recolha ? (me?.phone ?? '').replace(/^\+?258/, '') : '', pickup_contact: '', notes: '',
+  });
   const [service, setService] = useState<'normal' | 'expressa'>('normal');
   const [when, setWhen] = useState<'agora' | 'agendar'>('agora');
   const [date, setDate] = useState(todayMaputo());
@@ -78,6 +92,9 @@ export function NewOrder() {
         {
           quote_id: quote!.quote_id, recipient_name: d.recipient_name, recipient_phone: d.recipient_phone, pickup_contact: d.pickup_contact || undefined,
           category: d.category, description: d.description, notes: d.notes || undefined, payment_method: method,
+          ...(recolha
+            ? { order_kind: 'recolha', pickup_details: { establishment_type: est.establishment_type, establishment_name: est.establishment_name.trim(), order_ref: est.order_ref.trim() || undefined, paid_confirmed: est.paid_confirmed } }
+            : {}),
         },
         idem,
       ),
@@ -103,7 +120,7 @@ export function NewOrder() {
   const detailsOk = weight > 0 && weight <= maxKg && d.description.trim().length >= 3 && d.recipient_name.trim().length >= 2 && d.recipient_phone.trim().length >= 9;
 
   return (
-    <Page title="Nova entrega" back="/cliente">
+    <Page title={recolha ? 'Pedir recolha' : 'Nova encomenda'} back="/cliente">
       <ol className="steps">
         {STEPS.map(([k, l], i) => (
           <li key={k} className={k === step ? 'current' : STEPS.findIndex((s) => s[0] === step) > i ? 'done' : ''}>
@@ -113,15 +130,41 @@ export function NewOrder() {
       </ol>
       {cfg && !cfg.pricing_published && <Notice tone="warn">Ainda não existe tabela de preços publicada. Não é possível pedir entregas por agora.</Notice>}
 
+      {step === 'estabelecimento' && (
+        <Card className="stack">
+          <h3>Onde vamos buscar?</h3>
+          <div className="grid-2">
+            {ESTAB.map(([k, l]) => (
+              <button key={k} type="button" className={est.establishment_type === k ? 'chip active' : 'chip'} onClick={() => setEst({ ...est, establishment_type: k })}>
+                {l}
+              </button>
+            ))}
+          </div>
+          <Field label="Nome do estabelecimento">
+            <input value={est.establishment_name} maxLength={80} onChange={(e) => setEst({ ...est, establishment_name: e.target.value })} placeholder="Ex.: Farmácia Central" />
+          </Field>
+          <Field label="Número do pedido (opcional)">
+            <input value={est.order_ref} maxLength={40} onChange={(e) => setEst({ ...est, order_ref: e.target.value })} />
+          </Field>
+          <label className="radio">
+            <input type="checkbox" checked={est.paid_confirmed} onChange={(e) => setEst({ ...est, paid_confirmed: e.target.checked })} /> Confirmo que o artigo já está pago ou reservado.
+          </label>
+          <Notice>O estafeta não paga compras. Ele só recolhe e entrega.</Notice>
+          <Button disabled={est.establishment_name.trim().length < 2 || !est.paid_confirmed} onClick={() => setStep('locais')}>
+            Continuar
+          </Button>
+        </Card>
+      )}
+
       {step === 'locais' && (
         <div className="stack">
           <Card>
-            <LocationPicker label="Recolha (A)" kind="pickup" value={pickup} onChange={setPickup} />
+            <LocationPicker label={recolha ? 'Endereço do estabelecimento' : 'Recolha (A)'} kind="pickup" value={pickup} onChange={setPickup} />
           </Card>
           <Card>
-            <LocationPicker label="Entrega (B)" kind="dropoff" value={dropoff} onChange={setDropoff} />
+            <LocationPicker label={recolha ? 'Onde entregamos' : 'Entrega (B)'} kind="dropoff" value={dropoff} onChange={setDropoff} />
           </Card>
-          <Notice>Entregas só em Quelimane, até 15 km por estrada.</Notice>
+          <Notice>Entregamos em toda a cidade de Quelimane.</Notice>
           <Button disabled={!pickup || !dropoff} onClick={() => setStep('detalhes')}>
             Continuar
           </Button>
@@ -142,7 +185,7 @@ export function NewOrder() {
               ))}
             </select>
           </Field>
-          <Field label="O que vai enviar?">
+          <Field label={recolha ? 'O que vamos recolher?' : 'O que vais enviar?'}>
             <input value={d.description} maxLength={300} onChange={(e) => setD({ ...d, description: e.target.value })} placeholder="Ex.: envelope com documentos" />
           </Field>
           <Field label="Nome de quem recebe">
@@ -173,12 +216,19 @@ export function NewOrder() {
         <div className="stack">
           <div className="grid-2">
             {(['normal', 'expressa'] as const).map((s) => (
-              <Card key={s} className={service === s ? 'selected' : ''} onClick={() => setService(s)}>
+              <Card key={s} className={`service-card ${service === s ? 'selected' : ''}`} onClick={() => setService(s)}>
                 <h3>{s === 'normal' ? 'Normal' : 'Expressa'}</h3>
                 <p className="small">{s === 'normal' ? 'Prioridade normal.' : 'Prioridade máxima, sujeita a estafetas disponíveis.'}</p>
+                {plan && <span className="tag">{s === 'normal' ? 'Sem custo adicional' : `+${mt(supplement)}`}</span>}
               </Card>
             ))}
           </div>
+          {plan && (
+            <Notice>
+              Será descontada 1 encomenda do teu plano ({plan.remaining} disponíveis).
+              {service === 'expressa' && home.data?.express_credits > 0 && ' Tens um crédito expresso: o suplemento fica pago.'}
+            </Notice>
+          )}
           <Card className="stack">
             <h3>Quando?</h3>
             <div className="chips">
@@ -221,7 +271,7 @@ export function NewOrder() {
               Voltar
             </Button>
             <Button busy={a.busy} disabled={when === 'agendar' && !slot} onClick={getQuote}>
-              Ver preço
+              Continuar
             </Button>
           </div>
         </div>
@@ -236,6 +286,26 @@ export function NewOrder() {
             ]}
             route={quote.route_geometry}
           />
+          {quote.breakdown.plan_unit ? (
+            <Card>
+              <h3>Resumo</h3>
+              <KV
+                items={[
+                  ...(recolha ? ([['Recolha em', est.establishment_name]] as [string, string][]) : []),
+                  ['Modalidade', service === 'normal' ? 'Normal' : 'Expressa'],
+                  ['Encomendas do plano', `1 (ficam ${Math.max(0, quote.plan_remaining - 1)})`],
+                  ...(service === 'expressa'
+                    ? ([['Suplemento Expressa', quote.breakdown.express_credit ? 'Pago com crédito expresso' : mt(quote.breakdown.express_supplement_cents ?? supplement)]] as [string, string][])
+                    : []),
+                  ['Tempo estimado', minutes(quote.estimated_duration_s)],
+                ]}
+              />
+              <div className="row-between">
+                <strong>Total adicional</strong>
+                <div className="price">{mt(quote.total_cents)}</div>
+              </div>
+            </Card>
+          ) : (
           <Card>
             <div className="price">{mt(quote.total_cents)}</div>
             <KV
@@ -252,6 +322,8 @@ export function NewOrder() {
             />
             <small>Preço válido até {new Date(quote.expires_at).toLocaleTimeString('pt-PT', { timeZone: 'Africa/Maputo', hour: '2-digit', minute: '2-digit' })}.</small>
           </Card>
+          )}
+          <Notice>Depois de confirmar, recebes um código de 4 dígitos. Partilha-o só com quem recebe. O estafeta pede-o no momento da entrega.</Notice>
           {!quote.service_available_now && <Notice tone="warn">{quote.hours_message} Volte atrás e agende para outro horário.</Notice>}
           {quote.total_cents > 0 && (
             <Card className="stack">

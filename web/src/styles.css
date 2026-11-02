@@ -384,3 +384,26 @@ td input { min-height: 36px; padding: 0.35rem 0.5rem; }
   .bottom-nav, .page-head button, .btn { display: none !important; }
   .page { padding: 0; }
 }
+
+/* ---------------------------------------------------------------- Planos (novembro 2026) */
+.action-navy { background: var(--navy); box-shadow: 0 3px 10px rgb(13 42 79 / 30%); flex-wrap: wrap; }
+.action-big small { flex-basis: 100%; text-align: center; font-weight: 400; font-size: 0.8rem; color: #d5deeb; margin-top: -0.35rem; }
+.plan-balance { border-radius: 16px; padding: 1rem 1.1rem; background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%); color: #fff; display: flex; flex-direction: column; gap: 0.4rem; }
+.plan-balance small { color: #c7d3e6; }
+.plan-balance .credit { color: #ffd2b0; }
+.plan-count { font-size: 1rem; }
+.plan-count strong { font-size: 1.9rem; color: var(--orange); margin-right: 0.2rem; }
+.pill-ok { background: #1f9d55; color: #fff; border-radius: 999px; padding: 0.1rem 0.6rem; font-size: 0.75rem; font-weight: 600; }
+.plan-bar { height: 8px; border-radius: 99px; background: rgb(255 255 255 / 18%); overflow: hidden; }
+.plan-bar span { display: block; height: 100%; background: var(--orange); border-radius: 99px; }
+.plan-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
+@media (min-width: 900px) { .plan-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.plan-card { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 1rem 0.8rem 0.8rem; display: flex; flex-direction: column; align-items: center; gap: 0.25rem; text-align: center; box-shadow: var(--shadow); }
+.plan-card.recommended { border: 2px solid var(--orange); }
+.plan-flag { position: absolute; top: -0.65rem; background: var(--orange); color: #fff; font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.6rem; border-radius: 99px; }
+.plan-name { color: var(--navy); font-size: 1.05rem; }
+:root[data-theme='dark'] .plan-name { color: var(--text); }
+.plan-price { font-size: 1.25rem; font-weight: 700; color: var(--orange); }
+.plan-qty { font-weight: 600; }
+.plan-card button { width: 100%; margin-top: 0.4rem; }
+.service-card .tag { display: inline-block; margin-top: 0.3rem; font-weight: 700; color: var(--orange); }

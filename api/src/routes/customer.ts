@@ -333,10 +333,12 @@ r.get('/orders', async (c) => {
     em_curso: "AND status NOT IN ('ENTREGUE','CANCELADO','DEVOLVIDO')",
     concluidas: "AND status IN ('ENTREGUE','DEVOLVIDO')",
     canceladas: "AND status = 'CANCELADO'",
+    recolhas: "AND order_kind = 'recolha'",
+    envios: "AND order_kind = 'envio'",
   };
   const rows = await all(
     c.env.DB,
-    `SELECT id, code, status, price_cents, service_type, created_at, scheduled_at, dropoff_snapshot, pickup_snapshot
+    `SELECT id, code, status, price_cents, service_type, created_at, scheduled_at, dropoff_snapshot, pickup_snapshot, order_kind
        FROM orders WHERE customer_id = ? ${where[filter] ?? ''} ORDER BY created_at DESC LIMIT 20 OFFSET ?`,
     u.id,
     (page - 1) * 20,

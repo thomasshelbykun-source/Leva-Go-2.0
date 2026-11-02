@@ -19,8 +19,8 @@ export function Welcome() {
       <div className="welcome-bottom">
         <h2>Entregas rápidas e seguras em Quelimane!</h2>
         <ul className="bullets">
-          <li>De bicicleta ou motorizada, até 15 kg e 15 km por estrada.</li>
-          <li>Preço claro antes de confirmar. Acompanhe no mapa.</li>
+          <li>Em toda a cidade de Quelimane, até 15 kg.</li>
+          <li>Planos com encomendas incluídas. Acompanha no mapa.</li>
         </ul>
         {cfg && (
           <p className="small">
@@ -40,6 +40,7 @@ export function Welcome() {
 }
 
 // ------------------------------------------------------------------ Início
+/** Cliente novo ou sem saldo vê os planos. Cliente com plano vê o saldo e as 3 acções principais. */
 export function Home() {
   const { api } = useSession();
   const cfg = useConfig();
@@ -53,24 +54,10 @@ export function Home() {
               <Avatar name={h.name} />
               <div>
                 <h2>Olá, {String(h.name).split(' ')[0]}!</h2>
-                <small>Cliente LevaGo · Quelimane</small>
+                <small>O que desejas fazer hoje?</small>
               </div>
             </div>
-            {cfg && !cfg.open_now && <Notice tone="warn">Estamos fora do horário. Pode agendar uma entrega.</Notice>}
-            <Link to="/cliente/nova" className="action-big">
-              <Icon name="box" size={26} /> Solicitar entrega
-            </Link>
-            <Link to={h.active_order ? `/cliente/encomendas/${h.active_order.id}` : '/cliente/encomendas'} className="action-big action-light">
-              <Icon name="search" size={24} /> Acompanhar entrega
-            </Link>
-            <div className="grid-2">
-              <Link to="/cliente/encomendas" className="tile">
-                <Icon name="list" /> Minhas encomendas
-              </Link>
-              <Link to="/cliente/planos" className="tile">
-                <Icon name="tag" /> Planos de subscrição
-              </Link>
-            </div>
+            {cfg && !cfg.open_now && <Notice tone="warn">Estamos fora do horário. Podes agendar uma entrega.</Notice>}
             {h.active_order && (
               <Card onClick={() => (location.href = `/cliente/encomendas/${h.active_order.id}`)}>
                 <small>Encomenda em curso</small>
@@ -80,23 +67,7 @@ export function Home() {
                 </div>
               </Card>
             )}
-            {h.subscription ? (
-              <Card>
-                <small>Subscrição {h.subscription.plan_name}</small>
-                <p>
-                  <strong>{h.subscription.remaining}</strong> de {h.subscription.total} entregas disponíveis até {dateTime(h.subscription.period_end)}
-                </p>
-              </Card>
-            ) : (
-              <Card onClick={() => (location.href = '/cliente/planos')}>
-                <strong>Envia com frequência?</strong>
-                <p className="small">Veja os planos de subscrição.</p>
-              </Card>
-            )}
-            <div className="promo">
-              <strong>Entregas rápidas em toda Quelimane!</strong>
-              <small>Normal ou expressa, com preço claro antes de confirmar.</small>
-            </div>
+            {h.needs_plan ? <HomeNoPlan h={h} /> : <HomeWithPlan h={h} />}
           </div>
         )}
       </Loaded>
@@ -104,8 +75,115 @@ export function Home() {
   );
 }
 
+function HomeWithPlan({ h }: { h: any }) {
+  const s = h.subscription;
+  const pct = Math.round((s.remaining / Math.max(1, s.total)) * 100);
+  return (
+    <>
+      <div className="plan-balance">
+        <div className="row-between">
+          <span>Plano {s.plan_name}</span>
+          <span className="pill-ok">Activo</span>
+        </div>
+        <div className="plan-count">
+          <strong>{s.remaining}</strong> de {s.total} encomendas disponíveis
+        </div>
+        <div className="plan-bar">
+          <span style={{ width: `${pct}%` }} />
+        </div>
+        <small>Válido até {dateTime(s.period_end).split(',')[0]}</small>
+        {h.express_credits > 0 && <small className="credit">Tens {h.express_credits} crédito(s) expresso(s).</small>}
+      </div>
+      <Link to="/cliente/nova" className="action-big">
+        <Icon name="box" size={26} /> Enviar encomenda
+      </Link>
+      <Link to="/cliente/nova?tipo=recolha" className="action-big action-navy">
+        <Icon name="scooter" size={26} /> Pedir recolha
+        <small>Restaurante, farmácia, loja ou mercado</small>
+      </Link>
+      <Link to={h.active_order ? `/cliente/encomendas/${h.active_order.id}` : '/cliente/encomendas'} className="action-big action-light">
+        <Icon name="search" size={24} /> Acompanhar entrega
+      </Link>
+      <div className="grid-2">
+        <Link to="/cliente/encomendas" className="tile">
+          <Icon name="list" /> Histórico
+        </Link>
+        <Link to="/cliente/planos" className="tile">
+          <Icon name="tag" /> Meu plano
+        </Link>
+      </div>
+    </>
+  );
+}
+
+function HomeNoPlan({ h }: { h: any }) {
+  const ended = !!h.subscription;
+  return (
+    <>
+      {ended ? (
+        <Notice tone="warn">
+          O teu plano {h.subscription.plan_name} já não tem encomendas disponíveis. Escolhe um plano para continuar a enviar sem pagar cada entrega.
+        </Notice>
+      ) : (
+        <div className="promo">
+          <strong>Envia mais, paga menos.</strong>
+          <small>Escolhe um plano e envia encomendas Normais sem pagar cada entrega.</small>
+        </div>
+      )}
+      <PlanGrid plans={h.plans} recommended={h.recommended_plan_id} supplement={h.express_supplement_cents} />
+      <Link to="/cliente/nova" className="action-big action-light">
+        <Icon name="box" size={24} /> Enviar sem plano (pagar por entrega)
+      </Link>
+      <div className="grid-2">
+        <Link to="/cliente/encomendas" className="tile">
+          <Icon name="search" /> Acompanhar entrega
+        </Link>
+        <Link to="/cliente/apoio" className="tile">
+          <Icon name="chat" /> Ajuda e suporte
+        </Link>
+      </div>
+    </>
+  );
+}
+
+/** Grelha de planos publicada pelo Admin. «Contratar» cria a subscrição e abre o pagamento. */
+export function PlanGrid({ plans, recommended, supplement }: { plans: any[]; recommended?: string; supplement?: number }) {
+  const { api } = useSession();
+  const nav = useNavigate();
+  const a = useAction();
+  if (!plans?.length) return <Empty title="Sem planos publicados" text="Os planos ainda não estão disponíveis." />;
+  return (
+    <div className="stack">
+      <h3>Planos de subscrição</h3>
+      <div className="plan-grid">
+        {plans.map((p) => (
+          <div key={p.id} className={`plan-card ${p.id === recommended ? 'recommended' : ''}`}>
+            {p.id === recommended && <span className="plan-flag">Recomendado</span>}
+            <strong className="plan-name">{p.name}</strong>
+            <div className="plan-price">{mt(p.price_cents)}</div>
+            <div className="plan-qty">{p.deliveries_included} encomendas</div>
+            <small>Válido {p.period_days} dias</small>
+            <Button
+              kind={p.id === recommended ? 'primary' : 'secondary'}
+              busy={a.busy}
+              onClick={async () => {
+                const s = await a.run(() => api.post<{ id: string }>('/subscriptions', { plan_id: p.id }));
+                if (s) nav(`/cliente/pagar-plano/${s.id}`);
+              }}
+            >
+              Contratar
+            </Button>
+          </div>
+        ))}
+      </div>
+      <small className="center">Normal: sem custo adicional. Expressa: +{mt(supplement ?? 15000)} por encomenda.</small>
+      <ErrorBox error={a.error} />
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ Minhas encomendas
-type Filter = 'todas' | 'em_curso' | 'concluidas' | 'canceladas';
+type Filter = 'todas' | 'recolhas' | 'envios' | 'em_curso' | 'concluidas' | 'canceladas';
 export function Orders() {
   const { api } = useSession();
   const nav = useNavigate();
@@ -113,14 +191,14 @@ export function Orders() {
   const [page, setPage] = useState(1);
   const q = useLoad(() => api.get(`/orders?filter=${filter}&page=${page}`), [filter, page]);
   return (
-    <Page title="Minhas encomendas">
+    <Page title="Histórico">
       <Tabs
         value={filter}
         onChange={(f) => {
           setFilter(f);
           setPage(1);
         }}
-        options={[['todas', 'Todas'], ['em_curso', 'Em curso'], ['concluidas', 'Concluídas'], ['canceladas', 'Canceladas']]}
+        options={[['todas', 'Todas'], ['recolhas', 'Recolhas'], ['envios', 'Envios'], ['em_curso', 'Em curso'], ['concluidas', 'Concluídas']]}
       />
       <Loaded q={q}>
         {(d) =>
@@ -134,7 +212,7 @@ export function Orders() {
                     <strong>{o.code}</strong>
                     <StatusBadge status={o.status} label={o.status_label} />
                   </div>
-                  <small className="ellipsis">→ {o.dropoff?.text}</small>
+                  <small className="ellipsis">{o.order_kind === 'recolha' ? 'Recolha' : 'Envio'} → {o.dropoff?.text}</small>
                   <div className="row-between small">
                     <span>{dateTime(o.created_at)}</span>
                     <span>{mt(o.price_cents)}</span>
@@ -171,10 +249,10 @@ export function Plans() {
           <div className="stack">
             {d.active && (
               <Card>
-                <h3>A sua subscrição: {d.active.plan_name}</h3>
+                <h3>Plano {d.active.plan_name} {d.active.remaining > 0 ? '(activo)' : '(sem encomendas)'}</h3>
                 <KV
                   items={[
-                    ['Entregas usadas', `${d.active.used} de ${d.active.total}`],
+                    ['Encomendas disponíveis', `${d.active.remaining} de ${d.active.total}`],
                     ['Válida até', dateTime(d.active.period_end)],
                     ['Modalidades', d.active.service_types.map((s: string) => SERVICE[s]).join(', ')],
                     ['Peso máximo', `${d.active.max_weight_kg} kg`],
@@ -188,35 +266,7 @@ export function Plans() {
                 )}
               </Card>
             )}
-            {d.plans.length === 0 && <Empty title="Sem planos publicados" text="Os planos de subscrição ainda não estão disponíveis." />}
-            {d.plans.map((p: any) => (
-              <Card key={p.id} className="stack">
-                <div className="row-between">
-                  <h3>{p.name}</h3>
-                  <strong>{mt(p.price_cents)}</strong>
-                </div>
-                {p.description && <p className="small">{p.description}</p>}
-                <KV
-                  items={[
-                    ['Entregas incluídas', p.deliveries_included],
-                    ['Período', `${p.period_days} dias`],
-                    ['Modalidades', p.service_types.map((s: string) => SERVICE[s]).join(', ')],
-                    ['Peso máximo por entrega', `${p.max_weight_kg} kg`],
-                  ]}
-                />
-                {!d.active && (
-                  <Button
-                    busy={a.busy}
-                    onClick={async () => {
-                      const s = await a.run(() => api.post<{ id: string }>('/subscriptions', { plan_id: p.id }));
-                      if (s) nav(`/cliente/pagar-plano/${s.id}`);
-                    }}
-                  >
-                    Subscrever
-                  </Button>
-                )}
-              </Card>
-            ))}
+            {(!d.active || d.active.remaining <= 0) && <PlanGrid plans={d.plans} recommended="plano-plus" />}
             <ErrorBox error={a.error} />
             {cancel && (
               <Confirm
