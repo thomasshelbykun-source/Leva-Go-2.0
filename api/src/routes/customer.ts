@@ -1,10 +1,9 @@
 import type { Db, Stmt } from '../lib/db.js';
 import { Hono } from 'hono';
-import { reversePlace, roadRoute, searchPlaces, startCharge } from '../lib/adapters.js';
-import { applyPaymentEvent, refreshFromPagar } from './payments.js';
-import { pagarReady } from '../lib/pagar.js';
+import { manualInstructions, manualMethods, PAY_DEFAULTS, reversePlace, roadRoute, searchPlaces, startCharge } from '../lib/adapters.js';
+import { checkPhotoKeys, custodySettings, customerCustody, evidenceStmts, INCIDENT_CATEGORIES, INCIDENT_STATUS_LABELS, incidentStmt, newPickupCode, riskStmt } from '../lib/custody.js';
 import {
-  addMinutes, all, ApiError, bad, conflict, getSetting, need, normalizePhone, notFound, nowIso, one, parseJson, run, uuid, v,
+  addMinutes, all, ApiError, bad, conflict, files, getSetting, need, normalizePhone, notFound, nowIso, one, parseJson, run, uuid, v,
   type Env, type Vars,
 } from '../lib/core.js';
 import { hashPassword, orderCode, randomDigits, sha256, verifyPassword } from '../lib/crypto.js';
@@ -210,7 +209,12 @@ r.post('/orders', async (c) => {
     payment_method: 'mpesa' | 'emola' | 'na_entrega' | 'sandbox' | 'subscricao';
     order_kind?: 'envio' | 'recolha';
     pickup_details?: { establishment_type: string; establishment_name: string; order_ref?: string; paid_confirmed: boolean };
+    quantity?: number; declared_value_mt?: number | null; fragile?: boolean; declaration_accepted: boolean;
   }>(await c.req.json(), {
+    quantity: (x) => (x === undefined || (Number.isInteger(x) && (x as number) >= 1 && (x as number) <= 50) ? null : 'Quantidade entre 1 e 50.'),
+    declared_value_mt: (x) => (x === undefined || x === null || (typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= 10_000_000) ? null : 'Valor declarado inválido.'),
+    fragile: v.optBool(),
+    declaration_accepted: (x) => (x === true ? null : 'Confirme a declaração do remetente (conteúdo verdadeiro, permitido e bem embalado).'),
     quote_id: v.str(10, 64),
     recipient_name: v.str(2, 80),
     recipient_phone: v.phone(),
@@ -257,7 +261,7 @@ r.post('/orders', async (c) => {
     if ((n?.n ?? 0) >= cfg.capacity_per_slot) throw conflict('janela_cheia', 'Esta janela horária já está cheia. Escolha outra.');
   }
 
-  const pay = await getSetting(c.env.DB, 'payments', { mpesa_enabled: false, emola_enabled: false, sandbox_enabled: true, pay_on_delivery_enabled: false, pay_on_delivery_max_cents: 0 });
+  const pay = await getSetting(c.env.DB, 'payments', PAY_DEFAULTS);
   let status: OrderStatus;
   let paymentStatus: string;
   const extra: Stmt[] = [];
@@ -292,19 +296,26 @@ r.post('/orders', async (c) => {
     status = 'PENDENTE_ATRIBUICAO';
     paymentStatus = 'collect_on_delivery';
   } else {
-    const enabled = { mpesa: pay.mpesa_enabled && pagarReady(c.env), emola: pay.emola_enabled && pagarReady(c.env), sandbox: pay.sandbox_enabled && c.env.ENVIRONMENT !== 'production', subscricao: false } as Record<string, boolean>;
+    const enabled = { ...manualMethods(pay), sandbox: pay.sandbox_enabled && c.env.ENVIRONMENT !== 'production', subscricao: false } as Record<string, boolean>;
     if (!enabled[b.payment_method]) throw bad('metodo_indisponivel', 'Este método de pagamento ainda não está disponível.');
     status = 'AGUARDA_PAGAMENTO';
     paymentStatus = 'pending';
   }
 
+  const custody = await custodySettings(c.env.DB);
+  const declaredCents = b.declared_value_mt === undefined || b.declared_value_mt === null ? null : Math.round(b.declared_value_mt * 100);
+  if (declaredCents !== null && custody.max_declared_value_cents && declaredCents > custody.max_declared_value_cents)
+    throw bad('valor_declarado', `O valor declarado máximo é ${Math.round(custody.max_declared_value_cents / 100)} MT.`);
   const deliveryCode = randomDigits(4);
+  // Código de recolha: o remetente dá-o ao estafeta para confirmar a passagem da encomenda. Só o hash fica guardado.
+  const pickupCode = custody.pickup_code_required ? newPickupCode() : null;
   const code = orderCode();
   const insert = c.env.DB.prepare(
     `INSERT INTO orders (id, code, customer_id, quote_id, idempotency_key, pickup_snapshot, dropoff_snapshot, recipient_name, recipient_phone,
        category, description, notes, weight_kg, service_type, road_distance_m, price_cents, pricing_snapshot, payment_method, payment_status, status,
-       scheduled_at, delivery_code_hash, order_kind, pickup_details, express_supplement_cents, used_express_credit_id)
-     SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM quotes WHERE id = ? AND used_at IS NOT NULL)`,
+       scheduled_at, delivery_code_hash, order_kind, pickup_details, express_supplement_cents, used_express_credit_id,
+       quantity, declared_value_cents, fragile, declaration_accepted_at, declaration_version, pickup_code_hash)
+     SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM quotes WHERE id = ? AND used_at IS NOT NULL)`,
   ).bind(
     orderId, code, u.id, q.id, idem,
     JSON.stringify({ text: q.pickup_text, lat: q.pickup_lat, lon: q.pickup_lon, contact: b.pickup_contact ?? null }),
@@ -313,17 +324,18 @@ r.post('/orders', async (c) => {
     q.road_distance_m, q.total_cents, q.breakdown, q.total_cents === 0 ? 'subscricao' : b.payment_method,
     paymentStatus, status, q.scheduled_at, await sha256(`${orderId}:${deliveryCode}`),
     kind, b.pickup_details ? JSON.stringify(b.pickup_details) : null, qb.plan_unit && !qb.express_credit ? (qb.express_supplement_cents ?? 0) : 0, creditId,
+    b.quantity ?? 1, declaredCents, !!b.fragile, nowIso(), custody.declaration_version, pickupCode ? await sha256(`${orderId}:recolha:${pickupCode}`) : null,
     q.id,
   );
   const ok = await guardedBatch(c.env.DB, insert, [
     c.env.DB.prepare('UPDATE quotes SET used_at = ? WHERE id = ?').bind(nowIso(), q.id),
     c.env.DB.prepare("INSERT INTO order_events (id, order_id, from_status, to_status, actor_id, actor_role, note) VALUES (?,?,NULL,?,?, 'customer', 'Pedido criado')").bind(uuid(), orderId, status, u.id),
     ...extra,
-    notifyStmt(c.env.DB, u.id, `order:${orderId}:created`, 'encomenda', `${code}: pedido criado`, `Código de entrega: ${deliveryCode}. Mostre-o só ao estafeta, no momento da entrega.`, orderId),
+    notifyStmt(c.env.DB, u.id, `order:${orderId}:created`, 'encomenda', `${code}: pedido criado`, `Código de entrega: ${deliveryCode}. Partilhe-o só com quem recebe; o estafeta pede-o no momento da entrega.${pickupCode ? ` Código de recolha: ${pickupCode}. Dê-o ao estafeta quando ele levar a encomenda.` : ''}`, orderId),
   ]);
   if (!ok) throw conflict('cotacao_usada', 'Esta cotação já foi usada. Peça uma nova.');
   // O código de entrega é mostrado uma vez ao cliente e fica guardado só como hash.
-  return c.json({ ...(await orderDetail(c.env.DB, orderId, u.id)), delivery_code: deliveryCode }, 201);
+  return c.json({ ...(await orderDetail(c.env.DB, orderId, u.id)), delivery_code: deliveryCode, pickup_code: pickupCode }, 201);
 });
 
 r.get('/orders', async (c) => {
@@ -379,9 +391,110 @@ r.post('/orders/:id/cancel', async (c) => {
       "INSERT INTO refunds (id, intent_id, amount_cents, reason, requested_by) SELECT ?, id, amount_cents, ?, ? FROM payment_intents WHERE order_id = ? AND status = 'succeeded' LIMIT 1",
     ).bind(uuid(), `Cancelamento pelo cliente: ${b.reason}`, u.id, o.id));
   }
+  // LevaGo Safe: vários cancelamentos depois de um estafeta aceitar geram um sinal para revisão (não bloqueia).
+  if (['ATRIBUIDO', 'ACEITE'].includes(o.status)) {
+    const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    const prev = await one<{ n: number }>(
+      c.env.DB,
+      "SELECT COUNT(*)::int AS n FROM order_events e JOIN orders x ON x.id = e.order_id WHERE x.customer_id = ? AND e.to_status = 'CANCELADO' AND e.from_status IN ('ATRIBUIDO','ACEITE') AND e.created_at > ?",
+      u.id, since,
+    );
+    if ((prev?.n ?? 0) + 1 >= 3)
+      extra.push(riskStmt(c.env.DB, { rule: 'CANCELAMENTO_POS_ATRIBUICAO', severity: 'baixa', subjectType: 'customer', subjectId: u.id, orderId: o.id, evidence: { cancelamentos_30_dias: (prev?.n ?? 0) + 1 }, dedupe: `cancel:${u.id}:${since.slice(0, 7)}` }));
+  }
   const ok = await transition(c.env.DB, o, 'CANCELADO', { id: u.id, role: 'customer' }, { note: b.reason, set: { cancel_reason: b.reason }, extra });
   if (!ok) throw conflict('estado_mudou', 'O pedido mudou entretanto. Actualize a página.');
   return c.json(await orderDetail(c.env.DB, o.id, u.id));
+});
+
+// ------------------------------------------------------------------ Reclamações (Fase E) e provas do cliente
+const CUSTOMER_INCIDENTS = ['aberto_violado', 'danificado', 'conteudo_divergente', 'nao_recebido', 'atraso', 'outro'] as const;
+const customerPrefix = (id: string) => `customers/${id}/evidence/`;
+
+/** Foto para uma reclamação. Fica privada; só o próprio cliente e a equipa LevaGo a vêem. */
+r.post('/evidence/upload', async (c) => {
+  const u = requireRole(c, 'customer');
+  await rateLimit(c.env.DB, `evidence:${u.id}`, 30, 60);
+  const form = await c.req.formData();
+  const file = form.get('file') as unknown as File | null;
+  if (!file || typeof file.arrayBuffer !== 'function' || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw bad('ficheiro', 'Envie uma foto JPG, PNG ou WEBP.');
+  if (file.size > 4 * 1024 * 1024) throw bad('ficheiro', 'A foto tem mais de 4 MB.');
+  const key = `${customerPrefix(u.id)}${uuid()}`;
+  await files(c.env).put(key, await file.arrayBuffer(), file.type);
+  return c.json({ photo_key: key }, 201);
+});
+
+/** Reportar problema. Repetir o mesmo pedido (mesma Idempotency-Key) devolve a mesma reclamação. */
+r.post('/orders/:id/incidents', async (c) => {
+  const u = requireRole(c, 'customer');
+  const idem = c.req.header('Idempotency-Key');
+  if (!idem || idem.length < 8 || idem.length > 80) throw bad('idempotencia', 'Falta o cabeçalho Idempotency-Key.');
+  const b = need<{ category: (typeof CUSTOMER_INCIDENTS)[number]; description: string; photo_keys?: string[] }>(await c.req.json(), {
+    category: v.oneOf(...CUSTOMER_INCIDENTS),
+    description: v.str(5, 1000),
+    photo_keys: (x) => (x === undefined || (Array.isArray(x) && x.every((k) => typeof k === 'string')) ? null : 'Fotos inválidas.'),
+  });
+  const o = await one<OrderRow>(c.env.DB, 'SELECT * FROM orders WHERE id = ? AND customer_id = ?', c.req.param('id'), u.id);
+  if (!o) throw notFound();
+  const again = await one<{ id: string; protocol: string; status: string }>(c.env.DB, 'SELECT id, protocol, status FROM incidents WHERE reporter_id = ? AND request_key = ?', u.id, idem);
+  if (again) return c.json(again, 200);
+  if (['AGUARDA_PAGAMENTO', 'CANCELADO'].includes(o.status)) throw bad('sem_ocorrencia', 'Este pedido não tem entrega em curso nem concluída.');
+  await rateLimit(c.env.DB, `incident:${u.id}`, 10, 60);
+  const keys = await checkPhotoKeys(c.env.DB, b.photo_keys, customerPrefix(u.id), 0);
+  const id = uuid();
+  const priority = ['nao_recebido', 'aberto_violado'].includes(b.category) ? 'alta' : 'normal';
+  await c.env.DB.batch([
+    incidentStmt(c.env.DB, id, { orderId: o.id, reporterId: u.id, role: 'customer', category: b.category, description: b.description.trim(), priority, requestKey: idem }),
+    ...evidenceStmts(c.env.DB, keys, { orderId: o.id, stage: 'incident', uploadedBy: u.id, incidentId: id }),
+  ]);
+  const inc = await one<{ id: string; protocol: string; status: string }>(c.env.DB, 'SELECT id, protocol, status FROM incidents WHERE id = ?', id);
+  await c.env.DB.batch([notifyStmt(c.env.DB, u.id, `incident:${id}:created`, 'ocorrencia', `Reclamação ${inc!.protocol}`, 'Recebemos a sua reclamação. A equipa LevaGo vai analisar e responder aqui.', o.id)]);
+  return c.json(inc, 201);
+});
+
+r.get('/incidents', async (c) => {
+  const u = requireRole(c, 'customer');
+  const rows = await all<Record<string, string>>(
+    c.env.DB,
+    `SELECT i.id, i.protocol, i.category, i.status, i.created_at, i.updated_at, o.code AS order_code, o.id AS order_id
+       FROM incidents i JOIN orders o ON o.id = i.order_id WHERE i.reporter_id = ? ORDER BY i.created_at DESC LIMIT 100`,
+    u.id,
+  );
+  return c.json(rows.map((x) => ({ ...x, category_label: INCIDENT_CATEGORIES[x.category] ?? x.category, status_label: INCIDENT_STATUS_LABELS[x.status] })));
+});
+
+r.get('/incidents/:id', async (c) => {
+  const u = requireRole(c, 'customer');
+  const i = await one<Record<string, string>>(
+    c.env.DB,
+    `SELECT i.id, i.protocol, i.category, i.description, i.status, i.resolution, i.created_at, i.closed_at, o.code AS order_code, o.id AS order_id
+       FROM incidents i JOIN orders o ON o.id = i.order_id WHERE i.id = ? AND i.reporter_id = ?`,
+    c.req.param('id'), u.id,
+  );
+  if (!i) throw notFound();
+  const notes = await all(c.env.DB, "SELECT kind, body, author_role, created_at FROM incident_notes WHERE incident_id = ? AND internal = FALSE ORDER BY created_at", i.id);
+  const photos = await all(c.env.DB, 'SELECT id, created_at FROM evidence_files WHERE incident_id = ? AND uploaded_by = ? ORDER BY created_at', i.id, u.id);
+  return c.json({ ...i, category_label: INCIDENT_CATEGORIES[i.category] ?? i.category, status_label: INCIDENT_STATUS_LABELS[i.status], notes, photos });
+});
+
+/** O cliente responde (esclarecimento ou novas fotos). As provas antigas ficam como estavam. */
+r.post('/incidents/:id/reply', async (c) => {
+  const u = requireRole(c, 'customer');
+  const b = need<{ body: string; photo_keys?: string[] }>(await c.req.json(), {
+    body: v.str(2, 1000),
+    photo_keys: (x) => (x === undefined || (Array.isArray(x) && x.every((k) => typeof k === 'string')) ? null : 'Fotos inválidas.'),
+  });
+  const i = await one<{ id: string; order_id: string; status: string }>(c.env.DB, 'SELECT id, order_id, status FROM incidents WHERE id = ? AND reporter_id = ?', c.req.param('id'), u.id);
+  if (!i) throw notFound();
+  if (i.status === 'resolvida') throw conflict('ocorrencia_fechada', 'Esta reclamação já foi resolvida. Abra uma nova se precisar.');
+  await rateLimit(c.env.DB, `incident-reply:${u.id}`, 20, 60);
+  const keys = await checkPhotoKeys(c.env.DB, b.photo_keys, customerPrefix(u.id), 0);
+  await c.env.DB.batch([
+    c.env.DB.prepare("INSERT INTO incident_notes (id, incident_id, author_id, author_role, kind, body) VALUES (?,?,?, 'customer', 'mensagem', ?)").bind(uuid(), i.id, u.id, b.body.trim()),
+    ...evidenceStmts(c.env.DB, keys, { orderId: i.order_id, stage: 'incident', uploadedBy: u.id, incidentId: i.id }),
+    c.env.DB.prepare("UPDATE incidents SET status = CASE WHEN status = 'aguarda_provas' THEN 'em_analise' ELSE status END, updated_at = ? WHERE id = ?").bind(nowIso(), i.id),
+  ]);
+  return c.json({ ok: true }, 201);
 });
 
 r.post('/orders/:id/rating', async (c) => {
@@ -423,7 +536,8 @@ async function orderDetail(db: Db, id: string, customerId: string): Promise<Reco
     db,
     `SELECT id, code, status, customer_id, quote_id, pickup_snapshot, dropoff_snapshot, recipient_name, recipient_phone, category, description, notes,
             weight_kg, service_type, road_distance_m, price_cents, pricing_snapshot, payment_method, payment_status, scheduled_at, assigned_courier_id,
-            cancel_reason, created_at, updated_at, order_kind, pickup_details, express_supplement_cents, used_express_credit_id
+            cancel_reason, created_at, updated_at, order_kind, pickup_details, express_supplement_cents, used_express_credit_id,
+            quantity, declared_value_cents, fragile, declaration_accepted_at, (pickup_code_hash IS NOT NULL) AS has_pickup_code, (seal_code IS NOT NULL) AS seal_registered
        FROM orders WHERE id = ? AND customer_id = ?`,
     id,
     customerId,
@@ -458,6 +572,10 @@ async function orderDetail(db: Db, id: string, customerId: string): Promise<Reco
     route_geometry: parseJson(quote?.route_geometry, null),
     estimated_duration_s: quote?.estimated_duration_s ?? null,
     can_cancel: customerCanCancel(o.status),
+    custody: await customerCustody(db, id),
+    incidents: (
+      await all<Record<string, unknown>>(db, 'SELECT id, protocol, category, status, created_at, (reporter_id = ?) AS mine FROM incidents WHERE order_id = ? AND (reporter_id = ? OR reporter_role <> \'customer\') ORDER BY created_at', customerId, id, customerId)
+    ).map((x) => ({ ...x, category_label: INCIDENT_CATEGORIES[String(x.category)] ?? x.category, status_label: INCIDENT_STATUS_LABELS[String(x.status)] ?? x.status })),
     events,
     courier,
     courier_location: location,
@@ -482,8 +600,9 @@ r.post('/payments/intents', async (c) => {
   if (existing) return c.json(existing);
 
   let amount = 0;
-  let title = 'LevaGo';
-  let description = 'Serviço de entrega';
+  let reference = '';
+  const pay = await getSetting(c.env.DB, 'payments', PAY_DEFAULTS);
+  if (b.provider !== 'sandbox' && !manualMethods(pay)[b.provider]) throw bad('metodo_indisponivel', 'Este método de pagamento não está disponível.');
   if (b.order_id) {
     const o = await one<OrderRow>(c.env.DB, "SELECT * FROM orders WHERE id = ? AND customer_id = ?", b.order_id, u.id);
     if (!o) throw notFound();
@@ -492,44 +611,65 @@ r.post('/payments/intents', async (c) => {
     const open = await one(c.env.DB, "SELECT id FROM payment_intents WHERE order_id = ? AND status IN ('pending','succeeded')", o.id);
     if (open) throw conflict('pagamento_em_curso', 'Já existe um pagamento em curso para este pedido. Aguarde a confirmação.');
     amount = o.price_cents;
-    title = `LevaGo: encomenda ${o.code}`;
-    description = o.order_kind === 'recolha' ? 'Serviço de recolha e entrega em Quelimane' : 'Serviço de entrega em Quelimane';
+    reference = o.code;
   } else if (b.subscription_id) {
     const s = await one<{ id: string; status: string; plan_snapshot: string }>(c.env.DB, 'SELECT * FROM subscriptions WHERE id = ? AND customer_id = ?', b.subscription_id, u.id);
     if (!s || s.status !== 'pending_payment') throw conflict('pagamento_desnecessario', 'Esta subscrição não aguarda pagamento.');
     const open = await one(c.env.DB, "SELECT id FROM payment_intents WHERE subscription_id = ? AND status IN ('pending','succeeded')", s.id);
     if (open) throw conflict('pagamento_em_curso', 'Já existe um pagamento em curso para esta subscrição.');
-    const plan = parseJson<{ price_cents: number; name?: string }>(s.plan_snapshot, { price_cents: 0 });
-    amount = plan.price_cents;
-    title = `LevaGo: plano ${plan.name ?? ''}`.trim();
-    description = 'Plano de encomendas LevaGo';
+    amount = parseJson<{ price_cents: number }>(s.plan_snapshot, { price_cents: 0 }).price_cents;
   } else throw bad('pagamento', 'Indique o pedido ou a subscrição.');
 
-  // A carteira móvel só aceita meticais inteiros: arredonda para baixo, a favor do cliente.
-  if (b.provider !== 'sandbox') amount = Math.floor(amount / 100) * 100;
   const id = uuid();
   const msisdn = normalizePhone(b.msisdn)!;
-  const charge = await startCharge(c.env, b.provider, { id, amount_cents: amount, msisdn, title, description });
+  const charge = await startCharge(c.env, b.provider, { id, amount_cents: amount, msisdn });
+  if (!reference) reference = charge.provider_ref;
   await run(
     c.env.DB,
     'INSERT INTO payment_intents (id, customer_id, order_id, subscription_id, provider, amount_cents, msisdn, provider_ref, idempotency_key) VALUES (?,?,?,?,?,?,?,?,?)',
     id, u.id, b.order_id ?? null, b.subscription_id ?? null, b.provider, amount, msisdn, charge.provider_ref, idem,
   );
-  // O provedor pode recusar logo (ex.: número inválido). Passa pelo mesmo código do webhook.
-  if (charge.status === 'failed')
-    await applyPaymentEvent(c.env.DB, { event_id: `create-${id}`, intent_id: id, status: 'failed', amount_cents: amount, reason: charge.reason ?? undefined }, '{}');
-  return c.json(await one(c.env.DB, 'SELECT id, provider, status, amount_cents, provider_ref, created_at FROM payment_intents WHERE id = ?', id), 201);
+  const created = await one(c.env.DB, 'SELECT id, provider, status, amount_cents, provider_ref, created_at FROM payment_intents WHERE id = ?', id);
+  return c.json({ ...created, manual: b.provider === 'sandbox' ? null : manualInstructions(pay, b.provider, amount, reference) }, 201);
 });
 
 r.get('/payments/intents/:id', async (c) => {
   const u = requireRole(c, 'customer');
-  const sql = 'SELECT id, provider, status, amount_cents, failure_reason, order_id, subscription_id, provider_ref, created_at FROM payment_intents WHERE id = ? AND customer_id = ?';
-  let pi = await one<{ id: string; provider: string; status: string; provider_ref: string | null }>(c.env.DB, sql, c.req.param('id'), u.id);
+  const pi = await one<{ id: string; provider: 'mpesa' | 'emola' | 'sandbox'; status: string; amount_cents: number; provider_ref: string; order_code: string | null }>(
+    c.env.DB,
+    `SELECT p.id, p.provider, p.status, p.amount_cents, p.failure_reason, p.order_id, p.subscription_id, p.provider_ref, p.manual_txn_ref, p.manual_submitted_at, p.created_at, o.code AS order_code
+       FROM payment_intents p LEFT JOIN orders o ON o.id = p.order_id WHERE p.id = ? AND p.customer_id = ?`,
+    c.req.param('id'), u.id,
+  );
   if (!pi) throw notFound();
-  // Se o webhook se perdeu, consulta a Pagar enquanto o cliente espera (no máximo a cada 12 s).
-  if (pi.status === 'pending' && pi.provider !== 'sandbox' && pi.provider_ref && (await refreshFromPagar(c.env, pi.id, pi.provider_ref)))
-    pi = await one(c.env.DB, sql, c.req.param('id'), u.id);
-  return c.json(pi);
+  const pay = await getSetting(c.env.DB, 'payments', PAY_DEFAULTS);
+  return c.json({ ...pi, manual: pi.provider === 'sandbox' ? null : manualInstructions(pay, pi.provider, pi.amount_cents, pi.order_code ?? pi.provider_ref) });
+});
+
+/**
+ * Pagamento manual: o cliente indica o código da transacção que recebeu por SMS do M-Pesa ou e-Mola.
+ * Isto NÃO confirma o pagamento. Só um super-administrador confirma, depois de ver o valor no extracto.
+ */
+r.post('/payments/intents/:id/manual-reference', async (c) => {
+  const u = requireRole(c, 'customer');
+  const b = need<{ txn_ref: string }>(await c.req.json(), {
+    txn_ref: (x) => (typeof x === 'string' && /^[A-Za-z0-9.]{6,24}$/.test(x.trim()) ? null : 'Escreva o código da transacção que recebeu por SMS (letras e números).'),
+  });
+  await rateLimit(c.env.DB, `manual-ref:${u.id}`, 10, 60);
+  const pi = await one<{ id: string; provider: string; status: string; manual_txn_ref: string | null }>(
+    c.env.DB, 'SELECT id, provider, status, manual_txn_ref FROM payment_intents WHERE id = ? AND customer_id = ?', c.req.param('id'), u.id,
+  );
+  if (!pi) throw notFound();
+  if (pi.provider === 'sandbox') throw bad('metodo', 'Este pagamento não é manual.');
+  if (pi.status !== 'pending') throw conflict('pagamento_fechado', 'Este pagamento já foi analisado.');
+  const ref = b.txn_ref.trim().toUpperCase();
+  const used = await one(c.env.DB, 'SELECT 1 FROM payment_intents WHERE provider = ? AND upper(manual_txn_ref) = ? AND id <> ?', pi.provider, ref, pi.id);
+  if (used) {
+    await c.env.DB.batch([riskStmt(c.env.DB, { rule: 'CODIGO_PAGAMENTO_REPETIDO', severity: 'alta', subjectType: 'customer', subjectId: u.id, evidence: { intent: pi.id }, dedupe: `txn:${pi.provider}:${ref}:${pi.id}` })]);
+    throw conflict('codigo_usado', 'Este código de transacção já foi usado noutro pagamento.');
+  }
+  await run(c.env.DB, "UPDATE payment_intents SET manual_txn_ref = ?, manual_submitted_at = ?, updated_at = ? WHERE id = ? AND status = 'pending'", ref, nowIso(), nowIso(), pi.id);
+  return c.json({ ok: true, status: 'pending', manual_txn_ref: ref });
 });
 
 // ------------------------------------------------------------------ Subscrições

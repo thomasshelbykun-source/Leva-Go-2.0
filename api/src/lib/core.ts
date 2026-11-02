@@ -12,11 +12,6 @@ export interface Env {
   ROUTING_OSRM_URL?: string;
   GEOCODER_URL?: string;
   PAYMENTS_WEBHOOK_SECRET?: string;
-  // Pagar API (M-Pesa e e-Mola). Só no servidor, nas variáveis de ambiente da Vercel.
-  PAGAR_API_BASE_URL?: string;
-  PAGAR_API_KEY?: string;
-  PAGAR_SIGNING_SECRET?: string;
-  PAGAR_WEBHOOK_SECRET?: string;
   SMS_PROVIDER_URL?: string;
   SMS_PROVIDER_KEY?: string;
 }

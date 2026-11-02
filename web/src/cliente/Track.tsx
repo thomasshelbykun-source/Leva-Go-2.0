@@ -3,9 +3,10 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CATEGORIES, dateTime, km, mt, PAY_METHOD, SERVICE } from '../shared/format';
 import { MapView, type MapMarker } from '../shared/map';
 import { useSession } from '../shared/session';
-import { Button, Card, Confirm, ErrorBox, KV, Loaded, Notice, Page, StatusBadge, Timeline, useAction, useLoad } from '../shared/ui';
+import { Badge, Button, Card, Confirm, ErrorBox, KV, Loaded, Notice, Page, StatusBadge, Timeline, useAction, useLoad } from '../shared/ui';
+import { ReportProblem } from './Incidents';
 
-const ACTIVE = ['PENDENTE_ATRIBUICAO', 'ATRIBUIDO', 'ACEITE', 'RECOLHIDO', 'EM_TRANSPORTE', 'AGUARDA_PAGAMENTO'];
+const ACTIVE = ['PENDENTE_ATRIBUICAO', 'ATRIBUIDO', 'ACEITE', 'RECOLHA_BLOQUEADA', 'RECOLHIDO', 'EM_TRANSPORTE', 'AGUARDA_PAGAMENTO'];
 
 /** Acompanhar encomenda: estado, mapa, estafeta, código de entrega, cancelar, avaliar, comprovativo. */
 export function Track() {
@@ -19,8 +20,10 @@ export function Track() {
   const [comment, setComment] = useState('');
   const rate = useAction();
   let code: string | null = null;
+  let pickupCode: string | null = null;
   try {
     code = sessionStorage.getItem(`levago.code.${id}`);
+    pickupCode = sessionStorage.getItem(`levago.pickup.${id}`);
   } catch {
     code = null;
   }
@@ -46,6 +49,16 @@ export function Track() {
                   <Button onClick={() => nav(`/cliente/pagar/${o.id}`)}>Pagar agora</Button>
                 )}
               </Card>
+              {o.status === 'RECOLHA_BLOQUEADA' && (
+                <Notice tone="warn">O estafeta suspendeu a recolha porque a embalagem não estava em condições. A equipa LevaGo vai contactar o remetente.</Notice>
+              )}
+              {o.has_pickup_code && ['PENDENTE_ATRIBUICAO', 'ATRIBUIDO', 'ACEITE', 'RECOLHA_BLOQUEADA'].includes(o.status) && (
+                <Card className="code-card">
+                  <small>Código de recolha</small>
+                  <div className="code">{pickupCode ?? '••••'}</div>
+                  <small>{pickupCode ? 'Quem entrega a encomenda dá este código ao estafeta, depois de ver a embalagem.' : 'O código está na notificação "pedido criado".'}</small>
+                </Card>
+              )}
               {ACTIVE.includes(o.status) && o.status !== 'AGUARDA_PAGAMENTO' && (
                 <Card className="code-card">
                   <small>Código de entrega</small>
@@ -70,6 +83,30 @@ export function Track() {
                 <h3>Linha temporal</h3>
                 <Timeline events={o.events} />
               </Card>
+              {o.custody?.length > 0 && (
+                <Card>
+                  <h3>Cadeia de custódia</h3>
+                  <ul className="plain">
+                    {o.custody.map((c: any, k: number) => (
+                      <li key={k}>
+                        {c.label} <small>· {dateTime(c.occurred_at)}</small>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              )}
+              {o.incidents?.length > 0 && (
+                <Card>
+                  <h3>Ocorrências</h3>
+                  {o.incidents.map((i: any) => (
+                    <div key={i.id} className="row-between">
+                      {i.mine ? <Link to={`/cliente/ocorrencias/${i.id}`}>{i.protocol}</Link> : <span>{i.protocol}</span>}
+                      <small>{i.category_label}</small>
+                      <Badge>{i.status_label}</Badge>
+                    </div>
+                  ))}
+                </Card>
+              )}
               <Card>
                 <KV
                   items={[
@@ -78,6 +115,8 @@ export function Track() {
                     ['Destinatário', `${o.recipient_name} (${o.recipient_phone})`],
                     ['Conteúdo', `${CATEGORIES[o.category] ?? o.category}: ${o.description}`],
                     ['Peso', `${o.weight_kg} kg`],
+                    ['Volumes', `${o.quantity ?? 1}${o.fragile ? ' (frágil)' : ''}`],
+                    ...(o.declared_value_cents != null ? ([['Valor declarado', mt(o.declared_value_cents)]] as [string, string][]) : []),
                     ['Distância', km(o.road_distance_m)],
                     ['Modalidade', SERVICE[o.service_type]],
                     ['Agendado para', o.scheduled_at ? dateTime(o.scheduled_at) : 'Assim que possível'],
@@ -109,6 +148,7 @@ export function Track() {
               <div className="row-between wrap">
                 {['ENTREGUE', 'DEVOLVIDO', 'CANCELADO'].includes(o.status) && <Link to={`/cliente/encomendas/${o.id}/comprovativo`}>Ver comprovativo</Link>}
                 <Link to={`/cliente/apoio?encomenda=${o.id}`}>Preciso de ajuda</Link>
+                {!['AGUARDA_PAGAMENTO', 'CANCELADO'].includes(o.status) && <ReportProblem orderId={o.id} onDone={q.reload} />}
                 {o.can_cancel && (
                   <Button kind="danger" onClick={() => setCancel(true)}>
                     Cancelar pedido

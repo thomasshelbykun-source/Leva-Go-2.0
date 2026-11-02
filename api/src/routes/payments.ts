@@ -3,7 +3,6 @@ import { Hono } from 'hono';
 import { ApiError, bad, forbidden, isProd, need, notFound, nowIso, one, parseJson, uuid, v, type Env, type Vars } from '../lib/core.js';
 import { hmacSha256, timingSafeEqual } from '../lib/crypto.js';
 import { guardedBatch, notifyStmt, requireRole, transition, type OrderRow } from '../lib/services.js';
-import { mapPagarStatus, pagarGet, pagarReady, verifyPagarWebhook, type PagarPayment } from '../lib/pagar.js';
 
 const r = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -74,62 +73,6 @@ export async function applyPaymentEvent(db: Db, ev: ProviderEvent, raw: string) 
   }
   return { status: 'succeeded' };
 }
-
-/** Aplica o estado actual de um pagamento da Pagar, lido por consulta autenticada (fonte de verdade). */
-async function applyPagarPayment(env: Env, payment: PagarPayment, eventId: string, raw: string) {
-  const outcome = mapPagarStatus(payment.status);
-  const pi = await one<{ id: string }>(env.DB, 'SELECT id FROM payment_intents WHERE provider_ref = ? OR id = ?', payment.id, payment.reference);
-  if (!pi) throw notFound('Pagamento desconhecido.');
-  if (!outcome) return { status: 'pending', pagar_status: payment.status };
-  const ev: ProviderEvent = {
-    event_id: eventId,
-    intent_id: pi.id,
-    status: outcome,
-    amount_cents: Math.round(payment.amountMzn * 100),
-    reason: outcome === 'failed' ? (payment.safeMessage ?? payment.failureReason ?? 'Pagamento não concluído') : undefined,
-  };
-  return applyPaymentEvent(env.DB, ev, raw);
-}
-
-const lastCheck = new Map<string, number>();
-
-/** Consulta a Pagar para uma tentativa pendente (webhook perdido). Devolve true se algo mudou. */
-export async function refreshFromPagar(env: Env, intentId: string, providerRef: string): Promise<boolean> {
-  if (!pagarReady(env)) return false;
-  const last = lastCheck.get(intentId) ?? 0;
-  if (Date.now() - last < 12_000) return false;
-  lastCheck.set(intentId, Date.now());
-  try {
-    const { payment } = await pagarGet<{ payment: PagarPayment }>(env, `/payments/${encodeURIComponent(providerRef)}`);
-    if (!mapPagarStatus(payment.status)) return false;
-    await applyPagarPayment(env, payment, `poll-${payment.id}-${payment.status}`, JSON.stringify({ id: payment.id, status: payment.status }));
-    return true;
-  } catch (err) {
-    console.error('pagar refresh', err);
-    return false;
-  }
-}
-
-/**
- * Webhook da Pagar (configurar no painel da Pagar: https://levago-api.vercel.app/v1/payments/webhook/pagar).
- * Valida a assinatura Pagar-Signature e depois confirma o estado com uma consulta autenticada.
- * O mesmo Pagar-Event-Id nunca tem efeito duas vezes.
- */
-r.post('/webhook/pagar', async (c) => {
-  const secret = c.env.PAGAR_WEBHOOK_SECRET;
-  if (!secret || !pagarReady(c.env)) throw new ApiError(503, 'webhook_desligado', 'Pagar não configurada.');
-  const raw = await c.req.text();
-  const eventId = c.req.header('Pagar-Event-Id');
-  if (!eventId) throw bad('evento', 'Falta Pagar-Event-Id.');
-  if (!verifyPagarWebhook(secret, c.req.header('Pagar-Signature') ?? '', raw)) throw new ApiError(401, 'assinatura', 'Assinatura inválida.');
-  const event = JSON.parse(raw) as { type?: string; event?: string; data?: { payment?: PagarPayment } & Partial<PagarPayment>; payment?: PagarPayment };
-  const type = event.type ?? event.event ?? '';
-  if (!type.startsWith('payment.')) return c.json({ ignored: true, type });
-  const paymentId = event.data?.payment?.id ?? event.payment?.id ?? event.data?.id;
-  if (!paymentId) throw bad('evento', 'Evento sem pagamento.');
-  const { payment } = await pagarGet<{ payment: PagarPayment }>(c.env, `/payments/${encodeURIComponent(paymentId)}`);
-  return c.json(await applyPagarPayment(c.env, payment, `pagar-${eventId}`, raw));
-});
 
 /** Webhook do provedor. Exige assinatura HMAC no cabeçalho X-LevaGo-Signature. */
 r.post('/webhook/:provider', async (c) => {

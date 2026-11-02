@@ -1,5 +1,4 @@
 // Adaptadores de integrações externas. Cada um pode ser trocado sem mexer nas regras de negócio.
-import { mapPagarStatus, pagarCharge, pagarReady } from './pagar.js';
 import { ApiError, type Env } from './core.js';
 
 // ------------------------------------------------------------------ Rotas por estrada
@@ -102,26 +101,57 @@ export async function sendOtp(env: Env, phone: string, code: string): Promise<{ 
 export type PaymentProvider = 'mpesa' | 'emola' | 'sandbox';
 
 /**
- * Inicia a cobrança no provedor. M-Pesa e e-Mola passam pela Pagar API (pagar.co.mz).
- * Sem chaves da Pagar, os dois métodos ficam desligados. Fora de produção existe o provedor "sandbox".
+ * Inicia a cobrança. M-Pesa e e-Mola são manuais (decisão do proprietário, 02/11/2026): o cliente transfere
+ * e um super-administrador confirma. Em staging existe também o provedor "sandbox", confirmado por webhook simulado.
  */
-export async function startCharge(
-  env: Env,
-  provider: PaymentProvider,
-  intent: { id: string; amount_cents: number; msisdn: string; title: string; description: string },
-): Promise<{ provider_ref: string; status?: 'succeeded' | 'failed' | null; reason?: string | null }> {
+export async function startCharge(env: Env, provider: PaymentProvider, intent: { id: string; amount_cents: number; msisdn: string }) {
   if (provider === 'sandbox') {
     if (env.ENVIRONMENT === 'production') throw new ApiError(400, 'metodo_indisponivel', 'Pagamento de teste não disponível em produção.');
     return { provider_ref: `SBX-${intent.id.slice(0, 8)}` };
   }
-  if (!pagarReady(env)) throw new ApiError(503, 'metodo_indisponivel', `${provider === 'mpesa' ? 'M-Pesa' : 'e-Mola'} ainda não está disponível.`);
-  const payment = await pagarCharge(env, {
-    reference: intent.id,
-    title: intent.title,
-    description: intent.description,
-    amountMzn: intent.amount_cents / 100,
-    method: provider === 'mpesa' ? 'MPESA' : 'EMOLA',
-    msisdn: intent.msisdn,
-  });
-  return { provider_ref: payment.id, status: mapPagarStatus(payment.status), reason: payment.safeMessage ?? payment.failureReason ?? null };
+  // M-Pesa e e-Mola são manuais: não há cobrança automática. A referência identifica a transferência.
+  return { provider_ref: `MAN-${intent.id.slice(0, 8).toUpperCase()}` };
+}
+
+// ------------------------------------------------------------------ Pagamentos manuais (M-Pesa e e-Mola)
+export interface PaySettings {
+  mpesa_enabled: boolean;
+  emola_enabled: boolean;
+  sandbox_enabled: boolean;
+  pay_on_delivery_enabled: boolean;
+  pay_on_delivery_max_cents: number;
+  mpesa_number: string;
+  emola_number: string;
+  account_name: string;
+}
+
+export const PAY_DEFAULTS: PaySettings = {
+  mpesa_enabled: false,
+  emola_enabled: false,
+  sandbox_enabled: true,
+  pay_on_delivery_enabled: false,
+  pay_on_delivery_max_cents: 0,
+  mpesa_number: '',
+  emola_number: '',
+  account_name: '',
+};
+
+/** Um método manual só fica disponível quando o Admin o liga e indica o número que recebe o dinheiro. */
+export function manualMethods(pay: PaySettings) {
+  return {
+    mpesa: pay.mpesa_enabled && (pay.mpesa_number ?? '').replace(/\D/g, '').length >= 9,
+    emola: pay.emola_enabled && (pay.emola_number ?? '').replace(/\D/g, '').length >= 9,
+  };
+}
+
+/** Instruções que o cliente vê: para onde transferir, quanto e que referência escrever. */
+export function manualInstructions(pay: PaySettings, provider: 'mpesa' | 'emola', amountCents: number, reference: string) {
+  return {
+    provider,
+    provider_label: provider === 'mpesa' ? 'M-Pesa' : 'e-Mola',
+    number: provider === 'mpesa' ? pay.mpesa_number : pay.emola_number,
+    account_name: pay.account_name,
+    amount_cents: amountCents,
+    reference,
+  };
 }

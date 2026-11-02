@@ -6,11 +6,12 @@ import { getDb } from './lib/db.js';
 import { fitsBusinessHours, type OrderStatus } from './lib/domain.js';
 import { envFlags, loadHours, loadSession, notifyStmt, transition, type OrderRow } from './lib/services.js';
 import admin from './routes/admin.js';
+import security from './routes/security.js';
 import auth from './routes/auth.js';
 import courier from './routes/courier.js';
 import customer from './routes/customer.js';
 import payments from './routes/payments.js';
-import { pagarReady } from './lib/pagar.js';
+import { manualMethods, PAY_DEFAULTS } from './lib/adapters.js';
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -26,10 +27,6 @@ export function loadEnv(): Env {
     ROUTING_OSRM_URL: e.ROUTING_OSRM_URL ?? 'https://router.project-osrm.org',
     GEOCODER_URL: e.GEOCODER_URL ?? 'https://nominatim.openstreetmap.org',
     PAYMENTS_WEBHOOK_SECRET: e.PAYMENTS_WEBHOOK_SECRET,
-    PAGAR_API_BASE_URL: e.PAGAR_API_BASE_URL,
-    PAGAR_API_KEY: e.PAGAR_API_KEY,
-    PAGAR_SIGNING_SECRET: e.PAGAR_SIGNING_SECRET,
-    PAGAR_WEBHOOK_SECRET: e.PAGAR_WEBHOOK_SECRET,
     SMS_PROVIDER_URL: e.SMS_PROVIDER_URL,
     SMS_PROVIDER_KEY: e.SMS_PROVIDER_KEY,
   };
@@ -85,7 +82,7 @@ app.get('/v1/config', async (c) => {
   const hours = await loadHours(db);
   const zones = await all<{ id: string; name: string; kind: string; polygon: string; city: string }>(db, 'SELECT id, name, kind, polygon, city FROM service_zones WHERE active = 1');
   const settings = Object.fromEntries((await all<{ key: string; value: string }>(db, "SELECT key, value FROM system_settings WHERE key IN ('company','limits','service_types','app','scheduling')")).map((s) => [s.key, parseJson(s.value, {})]));
-  const pay = await getSetting(db, 'payments', { mpesa_enabled: false, emola_enabled: false, sandbox_enabled: true, pay_on_delivery_enabled: false, pay_on_delivery_max_cents: 0 });
+  const pay = await getSetting(db, 'payments', PAY_DEFAULTS);
   const pricing = await one<{ version: number }>(db, "SELECT version FROM pricing_versions WHERE status = 'published' ORDER BY version DESC LIMIT 1");
   const now = fitsBusinessHours(new Date(), 0, hours);
   return c.json({
@@ -95,9 +92,8 @@ app.get('/v1/config', async (c) => {
     open_now: now.ok,
     zones: zones.map((z) => ({ ...z, polygon: parseJson(z.polygon, []) })),
     payment_methods: {
-      // M-Pesa e e-Mola só aparecem com a Pagar configurada e o método ligado pelo Admin.
-      mpesa: pay.mpesa_enabled && pagarReady(c.env),
-      emola: pay.emola_enabled && pagarReady(c.env),
+      // M-Pesa e e-Mola manuais: só aparecem quando o Admin os liga e indica o número que recebe.
+      ...manualMethods(pay),
       sandbox: pay.sandbox_enabled && c.env.ENVIRONMENT !== 'production',
       na_entrega: pay.pay_on_delivery_enabled,
     },
@@ -116,6 +112,7 @@ app.route('/v1/auth', auth);
 app.route('/v1', customer);
 app.route('/v1/courier', courier);
 app.route('/v1/payments', payments);
+app.route('/v1/admin/security', security);
 app.route('/v1/admin', admin);
 
 app.notFound((c) => c.json({ error: 'nao_encontrado', message: 'Endereço inexistente.' }, 404));
@@ -126,11 +123,12 @@ export async function housekeeping(env: Env) {
   const cutoff = new Date(Date.now() - 30 * 60_000).toISOString();
   const unpaid = await all<OrderRow>(db, "SELECT * FROM orders WHERE status = 'AGUARDA_PAGAMENTO' AND created_at < ?", cutoff);
   for (const o of unpaid) {
-    const pending = await one(db, "SELECT 1 FROM payment_intents WHERE order_id = ? AND status = 'pending' AND created_at > ?", o.id, cutoff);
+    // Pagamento manual com código de transacção indicado: espera pela confirmação do Admin.
+    const pending = await one(db, "SELECT 1 FROM payment_intents WHERE order_id = ? AND status = 'pending' AND (created_at > ? OR manual_txn_ref IS NOT NULL)", o.id, cutoff);
     if (pending) continue;
     await transition(db, o, 'CANCELADO' as OrderStatus, { id: null, role: 'system' }, { note: 'Pagamento não concluído em 30 minutos', set: { cancel_reason: 'Pagamento não concluído' } });
   }
-  await run(db, "UPDATE payment_intents SET status = 'failed', failure_reason = 'Sem confirmação do provedor', updated_at = ? WHERE status = 'pending' AND created_at < ?", nowIso(), new Date(Date.now() - 60 * 60_000).toISOString());
+  await run(db, "UPDATE payment_intents SET status = 'failed', failure_reason = 'Sem confirmação do provedor', updated_at = ? WHERE status = 'pending' AND manual_txn_ref IS NULL AND created_at < ?", nowIso(), new Date(Date.now() - 60 * 60_000).toISOString());
   const ended = await all<{ id: string; customer_id: string }>(db, "SELECT id, customer_id FROM subscriptions WHERE status = 'active' AND current_period_end < ?", nowIso());
   for (const s of ended) {
     await db.batch([

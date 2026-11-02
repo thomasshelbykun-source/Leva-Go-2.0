@@ -438,6 +438,7 @@ export function Profile({ base }: { base: string }) {
         <Card className="stack">
           <h3>Ajuda e informação</h3>
           <Link to={`${base}/apoio`}>Apoio ao cliente</Link>
+          {base === '/cliente' && <Link to="/cliente/ocorrencias">As minhas ocorrências</Link>}
           <Link to="/termos">Termos de utilização</Link>
           <Link to="/privacidade">Política de privacidade</Link>
           <small>LevaGo versão 2.0.0</small>

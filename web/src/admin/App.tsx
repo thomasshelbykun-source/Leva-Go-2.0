@@ -4,13 +4,14 @@ import { Avatar, Icon, Logo, type IconName } from '../shared/brand';
 import { ResetPassword } from '../shared/Auth';
 import { RequireAuth, SessionProvider, useSession } from '../shared/session';
 import { Pricing, Payments, Reports, Settings, Subscriptions, TicketDetail, Tickets, Zones } from './Business';
+import { IncidentDossier, SecurityCenter } from './Security';
 import { AdminOrderDetail, AdminOrders, CourierDetail, Couriers, CustomerDetail, Customers, Dashboard } from './Operations';
 
 const BASE = '/admin';
 const MENU: [string, IconName, string][] = [
   ['', 'dashboard', 'Dashboard'], ['clientes', 'users', 'Clientes'], ['estafetas', 'scooter', 'Estafetas'], ['encomendas', 'box', 'Encomendas'],
   ['subscricoes', 'shield', 'Subscrições'], ['pagamentos', 'card', 'Pagamentos'], ['tarifas', 'tag', 'Tarifas'], ['zonas', 'map', 'Zonas e cobertura'],
-  ['suporte', 'chat', 'Reclamações'], ['relatorios', 'chart', 'Relatórios'], ['definicoes', 'gear', 'Configurações'],
+  ['seguranca', 'shield', 'Segurança e ocorrências'], ['suporte', 'chat', 'Apoio'], ['relatorios', 'chart', 'Relatórios'], ['definicoes', 'gear', 'Configurações'],
 ];
 
 // No telemóvel, estas secções ficam na barra de baixo; as outras estão no menu.
@@ -105,6 +106,8 @@ export default function AdminApp() {
           <Route path="pagamentos" element={<Payments />} />
           <Route path="tarifas" element={<Pricing />} />
           <Route path="zonas" element={<Zones />} />
+          <Route path="seguranca" element={<SecurityCenter />} />
+          <Route path="seguranca/:id" element={<IncidentDossier />} />
           <Route path="suporte" element={<Tickets />} />
           <Route path="suporte/:id" element={<TicketDetail />} />
           <Route path="relatorios" element={<Reports />} />

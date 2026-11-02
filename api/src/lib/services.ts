@@ -91,6 +91,7 @@ export interface OrderRow {
 const NOTIFY_CUSTOMER: Partial<Record<OrderStatus, string>> = {
   PENDENTE_ATRIBUICAO: 'Pedido confirmado. Estamos à procura de um estafeta.',
   ACEITE: 'Um estafeta aceitou o seu pedido e vai à recolha.',
+  RECOLHA_BLOQUEADA: 'O estafeta suspendeu a recolha para verificação da embalagem. A equipa LevaGo vai analisar.',
   RECOLHIDO: 'A sua encomenda foi recolhida.',
   EM_TRANSPORTE: 'A sua encomenda está a caminho do destino.',
   ENTREGUE: 'A sua encomenda foi entregue.',

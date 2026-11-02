@@ -325,6 +325,8 @@ export function Task() {
   const a = useAction();
   const [check, setCheck] = useState<string[]>([]);
   const [photo, setPhoto] = useState<File | null>(null);
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [insp, setInsp] = useState({ packaging: 'intacta', match: 'sim', verdict: 'sem_anomalias', seal: '', weight: '', pcode: '', notes: '' });
   const [code, setCode] = useState('');
   const [cash, setCash] = useState(false);
   const [dialog, setDialog] = useState<'decline' | 'incident' | null>(null);
@@ -342,10 +344,21 @@ export function Task() {
     form.set('file', photo);
     return (await api.upload<{ photo_key: string }>('/courier/proofs/upload', form)).photo_key;
   };
+  const uploadPhotos = async () => {
+    const keys: string[] = [];
+    for (const f of photos) {
+      const form = new FormData();
+      form.set('file', f);
+      keys.push((await api.upload<{ photo_key: string }>('/courier/proofs/upload', form)).photo_key);
+    }
+    return keys;
+  };
   const step = async (fn: () => Promise<unknown>) => {
     if (await a.run(fn)) {
       setCheck([]);
       setPhoto(null);
+      setPhotos([]);
+      setInsp({ packaging: 'intacta', match: 'sim', verdict: 'sem_anomalias', seal: '', weight: '', pcode: '', notes: '' });
       setCode('');
       await q.reload(true);
     }
@@ -411,19 +424,85 @@ export function Task() {
                 </div>
               )}
 
-              {o.mine && o.status === 'ACEITE' && (
-                <Card className="stack">
-                  <h3>Confirmar recolha</h3>
-                  {checklist(PICKUP_CHECK)}
-                  <Button
-                    busy={a.busy}
-                    disabled={check.length < PICKUP_CHECK.length}
-                    onClick={() => step(async () => api.post(`/courier/orders/${o.id}/pickup`, { checklist: check, photo_key: await uploadPhoto(), ...(await here()) }))}
-                  >
-                    Encomenda recolhida
-                  </Button>
-                </Card>
-              )}
+              {o.mine && o.status === 'ACEITE' && (() => {
+                const sec = o.security ?? {};
+                const problem = insp.packaging !== 'intacta' || insp.match === 'nao';
+                const minPhotos = Math.max(problem ? 1 : 0, sec.pickup_photos_min ?? 0);
+                return (
+                  <Card className="stack">
+                    <h3>Inspecção na recolha</h3>
+                    <Notice>Verifique só por fora. Não abra a encomenda.</Notice>
+                    {sec.quantity > 1 && <Notice tone="warn">Esta encomenda tem {sec.quantity} volumes. Confirme que recebe todos.</Notice>}
+                    {sec.fragile && <Badge tone="warn">Frágil</Badge>}
+                    <Field label="Estado da embalagem">
+                      <select value={insp.packaging} onChange={(e) => setInsp({ ...insp, packaging: e.target.value })}>
+                        <option value="intacta">Intacta e fechada</option>
+                        <option value="danificada">Danificada</option>
+                        <option value="aberta">Aberta ou violada</option>
+                        <option value="insegura">Mal embalada ou insegura</option>
+                      </select>
+                    </Field>
+                    <Field label="O aspecto exterior corresponde à descrição?">
+                      <select value={insp.match} onChange={(e) => setInsp({ ...insp, match: e.target.value })}>
+                        <option value="sim">Sim</option>
+                        <option value="nao">Não</option>
+                        <option value="nao_verificavel">Não dá para verificar</option>
+                      </select>
+                    </Field>
+                    <Field label={`Fotografias da embalagem (mínimo ${minPhotos}, máximo 6)`}>
+                      <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" disabled={photos.length >= 6} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setPhotos([...photos, f]); }} />
+                      {photos.length > 0 && <small>{photos.length} fotografia(s).</small>}
+                    </Field>
+                    {!problem && (
+                      <>
+                        <Field label={sec.seal_required ? 'Código do lacre' : 'Código do lacre (se usar lacre)'}>
+                          <input value={insp.seal} maxLength={40} onChange={(e) => setInsp({ ...insp, seal: e.target.value })} />
+                        </Field>
+                        <Field label="Peso medido (kg, opcional)">
+                          <input inputMode="decimal" value={insp.weight} onChange={(e) => setInsp({ ...insp, weight: e.target.value })} />
+                        </Field>
+                        {sec.pickup_code_required && (
+                          <Field label="Código de recolha (4 dígitos, dado pelo remetente)">
+                            <input inputMode="numeric" maxLength={4} value={insp.pcode} onChange={(e) => setInsp({ ...insp, pcode: e.target.value.replace(/\D/g, '') })} />
+                          </Field>
+                        )}
+                      </>
+                    )}
+                    <Field label={problem ? 'Descreva o problema' : 'Observações (opcional)'}>
+                      <textarea rows={2} maxLength={500} value={insp.notes} onChange={(e) => setInsp({ ...insp, notes: e.target.value })} />
+                    </Field>
+                    {problem ? (
+                      <Button
+                        kind="danger"
+                        busy={a.busy}
+                        disabled={photos.length < minPhotos}
+                        onClick={() => step(async () => api.post(`/courier/orders/${o.id}/pickup`, { packaging_condition: insp.packaging, external_match: insp.match, photo_keys: await uploadPhotos(), notes: insp.notes || undefined, ...(await here()) }))}
+                      >
+                        Suspender e reportar
+                      </Button>
+                    ) : (
+                      <Button
+                        busy={a.busy}
+                        disabled={photos.length < minPhotos || (sec.pickup_code_required && insp.pcode.length !== 4) || (sec.seal_required && !insp.seal.trim())}
+                        onClick={() =>
+                          step(async () =>
+                            api.post(`/courier/orders/${o.id}/pickup`, {
+                              packaging_condition: insp.packaging, external_match: insp.match, photo_keys: await uploadPhotos(),
+                              pickup_code: insp.pcode || undefined, seal_code: insp.seal.trim() || undefined,
+                              measured_weight_kg: insp.weight ? Number(insp.weight.replace(',', '.')) : undefined, weight_method: insp.weight ? 'balanca' : undefined,
+                              notes: insp.notes || undefined, ...(await here()),
+                            }),
+                          )
+                        }
+                      >
+                        Encomenda recolhida
+                      </Button>
+                    )}
+                  </Card>
+                );
+              })()}
+
+              {o.mine && o.status === 'RECOLHA_BLOQUEADA' && <Notice tone="warn">Recolha suspensa. Aguarde a decisão da equipa LevaGo antes de levar a encomenda.</Notice>}
 
               {o.mine && o.status === 'RECOLHIDO' && (
                 <Button busy={a.busy} onClick={() => step(() => api.post(`/courier/orders/${o.id}/start`))}>
@@ -431,27 +510,81 @@ export function Task() {
                 </Button>
               )}
 
-              {o.mine && o.status === 'EM_TRANSPORTE' && (
-                <Card className="stack">
-                  <h3>Finalizar entrega</h3>
-                  <Field label="Código de entrega (4 dígitos, dado pelo cliente)">
-                    <input inputMode="numeric" maxLength={4} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
-                  </Field>
-                  {checklist(DELIVERY_CHECK)}
-                  {o.payment.collect_cents > 0 && (
-                    <label className="check">
-                      <input type="checkbox" checked={cash} onChange={(e) => setCash(e.target.checked)} /> Recebi {mt(o.payment.collect_cents)} do cliente
-                    </label>
-                  )}
-                  <Button
-                    busy={a.busy}
-                    disabled={code.length !== 4 || (o.payment.collect_cents > 0 && !cash)}
-                    onClick={() => step(async () => api.post(`/courier/orders/${o.id}/deliver`, { code, checklist: check, cash_collected: cash, photo_key: await uploadPhoto(), ...(await here()) }))}
-                  >
-                    Confirmar entrega
-                  </Button>
-                </Card>
-              )}
+              {o.mine && o.status === 'EM_TRANSPORTE' && (() => {
+                const sec = o.security ?? {};
+                const problem = insp.packaging !== 'intacta' || insp.verdict === 'anomalia';
+                const minPhotos = Math.max(problem ? 1 : 0, sec.dropoff_photos_min ?? 0);
+                return (
+                  <Card className="stack">
+                    <h3>Finalizar entrega</h3>
+                    <Field label="Estado da embalagem na entrega">
+                      <select value={insp.packaging} onChange={(e) => setInsp({ ...insp, packaging: e.target.value })}>
+                        <option value="intacta">Intacta e fechada</option>
+                        <option value="danificada">Danificada</option>
+                        <option value="aberta">Aberta ou violada</option>
+                        <option value="insegura">Insegura</option>
+                      </select>
+                    </Field>
+                    <Field label="O destinatário viu a embalagem e diz:">
+                      <select value={insp.verdict} onChange={(e) => setInsp({ ...insp, verdict: e.target.value })}>
+                        <option value="sem_anomalias">Está tudo bem</option>
+                        <option value="anomalia">Há um problema</option>
+                      </select>
+                    </Field>
+                    {sec.seal_registered && (
+                      <Field label="Código do lacre (leia na embalagem)">
+                        <input value={insp.seal} maxLength={40} onChange={(e) => setInsp({ ...insp, seal: e.target.value })} />
+                      </Field>
+                    )}
+                    {(problem || minPhotos > 0) && (
+                      <Field label={`Fotografias (mínimo ${minPhotos})`}>
+                        <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" disabled={photos.length >= 6} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setPhotos([...photos, f]); }} />
+                        {photos.length > 0 && <small>{photos.length} fotografia(s).</small>}
+                      </Field>
+                    )}
+                    {problem ? (
+                      <>
+                        <Field label="Descreva o problema">
+                          <textarea rows={2} maxLength={500} value={insp.notes} onChange={(e) => setInsp({ ...insp, notes: e.target.value })} />
+                        </Field>
+                        <Button
+                          kind="danger"
+                          busy={a.busy}
+                          disabled={photos.length < minPhotos}
+                          onClick={() => step(async () => api.post(`/courier/orders/${o.id}/deliver`, { packaging_condition: insp.packaging, recipient_verdict: insp.verdict, seal_code: insp.seal.trim() || undefined, photo_keys: await uploadPhotos(), notes: insp.notes || undefined, ...(await here()) }))}
+                        >
+                          Registar problema na entrega
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Field label="Código de entrega (4 dígitos, dado pelo destinatário)">
+                          <input inputMode="numeric" maxLength={4} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
+                        </Field>
+                        {o.payment.collect_cents > 0 && (
+                          <label className="check">
+                            <input type="checkbox" checked={cash} onChange={(e) => setCash(e.target.checked)} /> Recebi {mt(o.payment.collect_cents)} do cliente
+                          </label>
+                        )}
+                        <Button
+                          busy={a.busy}
+                          disabled={code.length !== 4 || (o.payment.collect_cents > 0 && !cash) || photos.length < minPhotos || (sec.seal_registered && !insp.seal.trim())}
+                          onClick={() =>
+                            step(async () =>
+                              api.post(`/courier/orders/${o.id}/deliver`, {
+                                code, packaging_condition: 'intacta', recipient_verdict: 'sem_anomalias', seal_code: insp.seal.trim() || undefined,
+                                cash_collected: cash, photo_keys: await uploadPhotos(), ...(await here()),
+                              }),
+                            )
+                          }
+                        >
+                          Confirmar entrega
+                        </Button>
+                      </>
+                    )}
+                  </Card>
+                );
+              })()}
 
               {o.mine && ['FALHA_ENTREGA', 'DEVOLUCAO_PENDENTE'].includes(o.status) && (
                 <Card className="stack">

@@ -47,6 +47,7 @@ export function NewOrder() {
   const [d, setD] = useState({
     weight_kg: recolha ? '2' : '', category: recolha ? 'compras' : 'documentos', description: '',
     recipient_name: recolha ? me?.name ?? '' : '', recipient_phone: recolha ? (me?.phone ?? '').replace(/^\+?258/, '') : '', pickup_contact: '', notes: '',
+    quantity: '1', declared_value: '', fragile: false, declaration: false,
   });
   const [service, setService] = useState<'normal' | 'expressa'>('normal');
   const [when, setWhen] = useState<'agora' | 'agendar'>('agora');
@@ -87,11 +88,13 @@ export function NewOrder() {
 
   const confirm = async () => {
     const o = await a.run(() =>
-      api.post<{ id: string; status: string; delivery_code: string }>(
+      api.post<{ id: string; status: string; delivery_code: string; pickup_code?: string | null }>(
         '/orders',
         {
           quote_id: quote!.quote_id, recipient_name: d.recipient_name, recipient_phone: d.recipient_phone, pickup_contact: d.pickup_contact || undefined,
           category: d.category, description: d.description, notes: d.notes || undefined, payment_method: method,
+          quantity: Math.max(1, Math.min(50, parseInt(d.quantity, 10) || 1)), fragile: d.fragile, declaration_accepted: d.declaration,
+          declared_value_mt: d.declared_value.trim() ? Number(d.declared_value.replace(',', '.')) : null,
           ...(recolha
             ? { order_kind: 'recolha', pickup_details: { establishment_type: est.establishment_type, establishment_name: est.establishment_name.trim(), order_ref: est.order_ref.trim() || undefined, paid_confirmed: est.paid_confirmed } }
             : {}),
@@ -102,6 +105,7 @@ export function NewOrder() {
     if (!o) return;
     try {
       sessionStorage.setItem(`levago.code.${o.id}`, o.delivery_code);
+      if (o.pickup_code) sessionStorage.setItem(`levago.pickup.${o.id}`, o.pickup_code);
     } catch {
       /* sem armazenamento: o código fica nas notificações */
     }
@@ -117,7 +121,9 @@ export function NewOrder() {
       ] as const)
     : [];
 
-  const detailsOk = weight > 0 && weight <= maxKg && d.description.trim().length >= 3 && d.recipient_name.trim().length >= 2 && d.recipient_phone.trim().length >= 9;
+  const qty = parseInt(d.quantity, 10);
+  const valueOk = !d.declared_value.trim() || Number(d.declared_value.replace(',', '.')) >= 0;
+  const detailsOk = d.declaration && qty >= 1 && qty <= 50 && valueOk && weight > 0 && weight <= maxKg && d.description.trim().length >= 3 && d.recipient_name.trim().length >= 2 && d.recipient_phone.trim().length >= 9;
 
   return (
     <Page title={recolha ? 'Pedir recolha' : 'Nova encomenda'} back="/cliente">
@@ -200,7 +206,21 @@ export function NewOrder() {
           <Field label="Observações para o estafeta (opcional)">
             <textarea rows={2} maxLength={500} value={d.notes} onChange={(e) => setD({ ...d, notes: e.target.value })} />
           </Field>
+          <div className="row-between">
+            <Field label="Quantidade de volumes">
+              <input inputMode="numeric" value={d.quantity} onChange={(e) => setD({ ...d, quantity: e.target.value.replace(/\D/g, '') })} />
+            </Field>
+            <Field label="Valor aproximado (MT, opcional)">
+              <input inputMode="decimal" value={d.declared_value} onChange={(e) => setD({ ...d, declared_value: e.target.value })} />
+            </Field>
+          </div>
+          <label className="radio">
+            <input type="checkbox" checked={d.fragile} onChange={(e) => setD({ ...d, fragile: e.target.checked })} /> Conteúdo frágil
+          </label>
           <Notice tone="warn">Não envie dinheiro, armas, drogas, animais ou produtos perigosos.</Notice>
+          <label className="radio">
+            <input type="checkbox" checked={d.declaration} onChange={(e) => setD({ ...d, declaration: e.target.checked })} /> Declaro que a descrição é verdadeira, que o conteúdo é permitido e que a encomenda vai bem embalada e fechada.
+          </label>
           <div className="row-between">
             <Button kind="ghost" onClick={() => setStep('locais')}>
               Voltar
@@ -323,7 +343,7 @@ export function NewOrder() {
             <small>Preço válido até {new Date(quote.expires_at).toLocaleTimeString('pt-PT', { timeZone: 'Africa/Maputo', hour: '2-digit', minute: '2-digit' })}.</small>
           </Card>
           )}
-          <Notice>Depois de confirmar, recebes um código de 4 dígitos. Partilha-o só com quem recebe. O estafeta pede-o no momento da entrega.</Notice>
+          <Notice>Depois de confirmar, recebes 2 códigos. O código de recolha é para quem entrega a encomenda ao estafeta. O código de entrega é só para quem recebe. Não partilhes os códigos com o estafeta antes da hora.</Notice>
           {!quote.service_available_now && <Notice tone="warn">{quote.hours_message} Volte atrás e agende para outro horário.</Notice>}
           {quote.total_cents > 0 && (
             <Card className="stack">

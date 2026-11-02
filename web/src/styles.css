@@ -394,3 +394,10 @@ td input { min-height: 36px; padding: 0.35rem 0.5rem; }
   .admin-login-art { align-content: start; padding-top: 4rem; background-color: var(--navy); background-size: cover; background-position: center;
     background-image: linear-gradient(180deg, rgb(8 27 51 / 85%) 0%, rgb(8 27 51 / 25%) 40%, rgb(8 27 51 / 35%) 100%), url('/img/bg-admin.webp'); }
 }
+
+/* Ocorrências: mensagens e listas simples */
+.note { border-left: 3px solid var(--line); padding: 0.25rem 0.75rem; }
+.note.mine { border-left-color: var(--orange); }
+.note p { margin: 0.25rem 0 0; white-space: pre-wrap; }
+ul.plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.35rem; }
+@media (max-width: 760px) { .grid-2 { grid-template-columns: 1fr; } }

@@ -7,6 +7,7 @@ import { NewOrder } from './NewOrder';
 import { Payment } from './Payment';
 import { Home, Notifications, Orders, Plans, Profile, Support, Welcome } from './Screens';
 import { Receipt, Track } from './Track';
+import { IncidentDetail, MyIncidents } from './Incidents';
 
 const BASE = '/cliente';
 const TABS: [string, IconName, string][] = [
@@ -61,6 +62,8 @@ export default function ClienteApp() {
           <Route path="notificacoes" element={<Notifications base={BASE} />} />
           <Route path="perfil" element={<Profile base={BASE} />} />
           <Route path="apoio" element={<Support base={BASE} />} />
+          <Route path="ocorrencias" element={<MyIncidents />} />
+          <Route path="ocorrencias/:id" element={<IncidentDetail />} />
         </Route>
         <Route path="*" element={<Navigate to={BASE} replace />} />
       </Routes>

@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { all, bad, conflict, files, forbidden, getSetting, need, notFound, nowIso, one, parseJson, run, uuid, v, type Env, type Vars } from '../lib/core.js';
 import { sha256 } from '../lib/crypto.js';
 import { ACTIVE_COURIER_STATUSES, courierEarning, fitsBusinessHours, maputoParts, STATUS_LABELS, vehicleCanCarry, type OrderStatus } from '../lib/domain.js';
+import { checkPhotoKeys, custodySettings, custodyStmt, evidenceStmts, EXTERNAL_MATCH, INCIDENT_CATEGORIES, incidentStmt, inspectionStmt, PACKAGING, riskStmt } from '../lib/custody.js';
 import { auditStmt, earningStmt, guardedBatch, loadHours, notifyStmt, requireRole, transition, type OrderRow } from '../lib/services.js';
 
 const r = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -161,7 +162,7 @@ r.get('/orders/active', async (c) => {
   const rows = await all(
     c.env.DB,
     `SELECT id, code, status, service_type, weight_kg, pickup_snapshot, dropoff_snapshot, updated_at FROM orders
-      WHERE assigned_courier_id = ? AND status IN ('ATRIBUIDO','ACEITE','RECOLHIDO','EM_TRANSPORTE','FALHA_ENTREGA','DEVOLUCAO_PENDENTE') ORDER BY updated_at DESC`,
+      WHERE assigned_courier_id = ? AND status IN ('ATRIBUIDO','ACEITE','RECOLHA_BLOQUEADA','RECOLHIDO','EM_TRANSPORTE','FALHA_ENTREGA','DEVOLUCAO_PENDENTE') ORDER BY updated_at DESC`,
     u.id,
   );
   return c.json(rows.map((o) => ({ ...o, status_label: STATUS_LABELS[o.status as OrderStatus], pickup: parseJson(o.pickup_snapshot, {}), dropoff: parseJson(o.dropoff_snapshot, {}), pickup_snapshot: undefined, dropoff_snapshot: undefined })));
@@ -190,6 +191,7 @@ r.get('/orders/:id', async (c) => {
   const accepted = mine && ACTIVE_COURIER_STATUSES.concat(['FALHA_ENTREGA', 'DEVOLUCAO_PENDENTE'] as OrderStatus[]).includes(o.status);
   const customer = accepted ? await one<{ name: string; phone: string }>(c.env.DB, 'SELECT name, phone FROM users WHERE id = ?', o.customer_id) : null;
   const events = mine ? await all(c.env.DB, 'SELECT to_status, created_at FROM order_events WHERE order_id = ? ORDER BY created_at', o.id) : [];
+  const custody = await custodySettings(c.env.DB);
   return c.json({
     id: o.id, code: o.code, status: o.status, status_label: STATUS_LABELS[o.status], mine,
     service_type: o.service_type, category: o.category, description: o.description, notes: accepted ? o.notes : null,
@@ -200,6 +202,16 @@ r.get('/orders/:id', async (c) => {
     recipient: accepted ? { name: o.recipient_name, phone: o.recipient_phone } : null,
     customer: customer ? { name: customer.name.split(' ')[0], phone: customer.phone } : null,
     events,
+    // Protecção da encomenda: o estafeta vê o que precisa para a inspecção externa, nunca os códigos.
+    security: {
+      quantity: o.quantity ?? 1,
+      fragile: !!o.fragile,
+      pickup_code_required: !!o.pickup_code_hash && custody.pickup_code_required,
+      seal_registered: !!o.seal_code,
+      seal_required: custody.seal_required,
+      pickup_photos_min: custody.pickup_photos_min,
+      dropoff_photos_min: custody.dropoff_photos_min,
+    },
   });
 });
 
@@ -246,27 +258,106 @@ r.post('/orders/:id/decline', async (c) => {
 });
 
 async function myOrder(db: Db, id: string, courierId: string) {
-  const o = await one<OrderRow & { delivery_code_hash: string; delivery_code_attempts: number }>(db, 'SELECT * FROM orders WHERE id = ? AND assigned_courier_id = ?', id, courierId);
+  const o = await one<OrderRow & { delivery_code_hash: string; delivery_code_attempts: number; pickup_code_hash: string | null; pickup_code_attempts: number; seal_code: string | null; weight_kg: number }>(db, 'SELECT * FROM orders WHERE id = ? AND assigned_courier_id = ?', id, courierId);
   if (!o) throw notFound();
   return o;
 }
 
+const photoList = (x: unknown) => (x === undefined || (Array.isArray(x) && x.every((k) => typeof k === 'string')) ? null : 'Lista de fotos inválida.');
+const optNum = (min: number, max: number) => (x: unknown) => (x === undefined || x === null || (typeof x === 'number' && Number.isFinite(x) && x >= min && x <= max) ? null : `Número entre ${min} e ${max}.`);
+const courierParty = (id: string) => `estafeta:${id}`;
+const proofPrefix = (id: string) => `couriers/${id}/proofs/`;
+
+/**
+ * Recolha com inspecção externa (Fase B). O estafeta não abre a encomenda.
+ * Embalagem aberta, danificada, insegura, descrição divergente ou peso acima do limite: suspende a recolha e abre ocorrência.
+ * Caso normal: exige fotos, código do remetente (quando activo) e lacre (quando obrigatório). Tudo numa só transacção.
+ */
 r.post('/orders/:id/pickup', async (c) => {
   const u = requireRole(c, 'courier');
-  const b = need<{ checklist: string[]; photo_key?: string; lat?: number; lon?: number }>(await c.req.json(), {
-    checklist: (x) => (Array.isArray(x) && x.length >= 1 ? null : 'Confirme a lista de verificação.'),
+  const b = need<{
+    packaging_condition: (typeof PACKAGING)[number]; external_match: (typeof EXTERNAL_MATCH)[number]; photo_keys?: string[]; photo_key?: string;
+    pickup_code?: string; seal_code?: string; measured_weight_kg?: number; weight_method?: string; notes?: string; checklist?: string[]; lat?: number; lon?: number;
+  }>(await c.req.json(), {
+    packaging_condition: v.oneOf(...PACKAGING),
+    external_match: v.oneOf(...EXTERNAL_MATCH),
+    photo_keys: photoList,
     photo_key: v.optStr(200),
-    lat: (x) => (x === undefined || typeof x === 'number' ? null : 'inválido'),
-    lon: (x) => (x === undefined || typeof x === 'number' ? null : 'inválido'),
+    pickup_code: (x) => (x === undefined || x === null || x === '' || (typeof x === 'string' && /^\d{4}$/.test(x)) ? null : 'O código de recolha tem 4 dígitos.'),
+    seal_code: (x) => (x === undefined || x === null || x === '' || (typeof x === 'string' && /^[A-Za-z0-9-]{3,40}$/.test(x)) ? null : 'Número do lacre inválido.'),
+    measured_weight_kg: optNum(0.01, 100),
+    weight_method: v.optStr(60),
+    notes: v.optStr(500),
+    checklist: photoList,
+    lat: optNum(-90, 90),
+    lon: optNum(-180, 180),
   });
   const o = await myOrder(c.env.DB, c.req.param('id'), u.id);
-  if (b.photo_key && !b.photo_key.startsWith(`couriers/${u.id}/proofs/`)) throw forbidden();
+  if (o.status === 'RECOLHIDO' || o.status === 'EM_TRANSPORTE') return c.json({ ok: true, status: o.status }); // repetição do mesmo toque
+  if (o.status !== 'ACEITE') throw conflict('estado_invalido', 'O pedido não está pronto para recolha.');
+  const cfg = await custodySettings(c.env.DB);
+  const limits = await getSetting(c.env.DB, 'limits', { max_weight_kg: 15 });
+  const keys = await checkPhotoKeys(c.env.DB, [...(b.photo_keys ?? []), ...(b.photo_key ? [b.photo_key] : [])], proofPrefix(u.id), cfg.pickup_photos_min);
+  const seal = b.seal_code ? b.seal_code.trim().toUpperCase() : null;
+  const inspectionId = uuid();
+  const base = {
+    orderId: o.id, stage: 'pickup' as const, inspectorId: u.id, packaging: b.packaging_condition, externalMatch: b.external_match,
+    measuredWeightKg: b.measured_weight_kg ?? null, weightMethod: b.weight_method ?? null, sealCode: seal, notes: b.notes ?? null,
+  };
+
+  // Recolha suspensa: não se conclui; fica registada com provas e ocorrência para decisão do Admin.
+  const overWeight = b.measured_weight_kg !== undefined && b.measured_weight_kg > limits.max_weight_kg;
+  const block =
+    b.packaging_condition !== 'intacta' ? `embalagem_${b.packaging_condition}` : b.external_match === 'nao' ? 'descricao_divergente' : overWeight ? 'peso_acima_limite' : null;
+  if (block) {
+    const incidentId = uuid();
+    const ok = await transition(c.env.DB, o, 'RECOLHA_BLOQUEADA', { id: u.id, role: 'courier' }, {
+      requireCourier: u.id,
+      note: INCIDENT_CATEGORIES[block],
+      extra: [
+        inspectionStmt(c.env.DB, inspectionId, { ...base, outcome: 'bloqueada' }),
+        ...evidenceStmts(c.env.DB, keys, { orderId: o.id, stage: 'pickup', uploadedBy: u.id, inspectionId }),
+        incidentStmt(c.env.DB, incidentId, { orderId: o.id, reporterId: u.id, role: 'courier', category: block, description: b.notes?.trim() || INCIDENT_CATEGORIES[block], priority: 'alta' }),
+        custodyStmt(c.env.DB, { orderId: o.id, type: 'recolha_suspensa', from: 'remetente', to: 'remetente', actorId: u.id, inspectionId }),
+        riskStmt(c.env.DB, { rule: 'RECOLHA_SUSPENSA', severity: 'media', subjectType: 'order', subjectId: o.id, orderId: o.id, evidence: { motivo: block }, dedupe: `recolha:${o.id}:${inspectionId}` }),
+      ],
+    });
+    if (!ok) throw conflict('estado_mudou', 'O pedido mudou entretanto.');
+    const inc = await one<{ protocol: string }>(c.env.DB, 'SELECT protocol FROM incidents WHERE id = ?', incidentId);
+    return c.json({ ok: true, status: 'RECOLHA_BLOQUEADA', incident: inc?.protocol }, 201);
+  }
+
+  if (cfg.seal_required && !seal) throw bad('lacre', 'Registe o número do lacre.');
+  // Confirmação do remetente: código de 4 dígitos que só o remetente conhece (guardado como hash).
+  if (cfg.pickup_code_required && o.pickup_code_hash) {
+    if (o.pickup_code_attempts >= 5) throw conflict('codigo_bloqueado', 'Demasiadas tentativas do código de recolha. Contacte o apoio.');
+    if (!b.pickup_code) throw bad('codigo_recolha', 'Peça ao remetente o código de recolha.');
+    if ((await sha256(`${o.id}:recolha:${b.pickup_code}`)) !== o.pickup_code_hash) {
+      const n = o.pickup_code_attempts + 1;
+      await c.env.DB.batch([
+        c.env.DB.prepare('UPDATE orders SET pickup_code_attempts = pickup_code_attempts + 1 WHERE id = ?').bind(o.id),
+        ...(n >= cfg.otp_risk_threshold
+          ? [riskStmt(c.env.DB, { rule: 'CODIGO_RECOLHA_FALHADO', severity: 'media', subjectType: 'courier', subjectId: u.id, orderId: o.id, evidence: { tentativas: n }, dedupe: `codrec:${o.id}` })]
+          : []),
+      ]);
+      throw bad('codigo_errado', `Código de recolha errado. Restam ${Math.max(0, 5 - n)} tentativas.`);
+    }
+  }
+  const declared = Number(o.weight_kg);
+  const weightAlert = b.measured_weight_kg !== undefined && b.measured_weight_kg > declared * 1.2 + 0.5;
   const ok = await transition(c.env.DB, o, 'RECOLHIDO', { id: u.id, role: 'courier' }, {
     requireCourier: u.id,
+    set: seal ? { seal_code: seal } : {},
     extra: [
-      c.env.DB.prepare("INSERT INTO delivery_proofs (id, order_id, kind, method, checklist, photo_r2_key, lat, lon, created_by) VALUES (?,?, 'pickup', ?, ?, ?, ?, ?, ?)").bind(
-        uuid(), o.id, b.photo_key ? 'checklist+foto' : 'checklist', JSON.stringify(b.checklist), b.photo_key ?? null, b.lat ?? null, b.lon ?? null, u.id,
+      inspectionStmt(c.env.DB, inspectionId, { ...base, outcome: 'aprovada' }),
+      ...evidenceStmts(c.env.DB, keys, { orderId: o.id, stage: 'pickup', uploadedBy: u.id, inspectionId }),
+      custodyStmt(c.env.DB, { orderId: o.id, type: 'recolha_confirmada', from: 'remetente', to: courierParty(u.id), actorId: u.id, method: o.pickup_code_hash && cfg.pickup_code_required ? 'codigo_remetente' : 'inspeccao_estafeta', inspectionId }),
+      c.env.DB.prepare("INSERT INTO delivery_proofs (id, order_id, kind, method, checklist, photo_r2_key, lat, lon, created_by) VALUES (?,?, 'pickup', ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING").bind(
+        uuid(), o.id, o.pickup_code_hash ? 'codigo+inspeccao' : 'inspeccao', JSON.stringify(b.checklist ?? []), keys[0] ?? null, b.lat ?? null, b.lon ?? null, u.id,
       ),
+      ...(weightAlert
+        ? [riskStmt(c.env.DB, { rule: 'PESO_DIVERGENTE', severity: 'baixa', subjectType: 'order', subjectId: o.id, orderId: o.id, evidence: { declarado: declared, medido: b.measured_weight_kg }, dedupe: `peso:${o.id}` })]
+        : []),
     ],
   });
   if (!ok) throw conflict('estado_mudou', 'O pedido não está pronto para recolha.');
@@ -276,34 +367,86 @@ r.post('/orders/:id/pickup', async (c) => {
 r.post('/orders/:id/start', async (c) => {
   const u = requireRole(c, 'courier');
   const o = await myOrder(c.env.DB, c.req.param('id'), u.id);
+  if (o.status === 'EM_TRANSPORTE') return c.json({ ok: true, status: 'EM_TRANSPORTE' });
   const ok = await transition(c.env.DB, o, 'EM_TRANSPORTE', { id: u.id, role: 'courier' }, { requireCourier: u.id });
   if (!ok) throw conflict('estado_mudou', 'O pedido mudou entretanto.');
   return c.json({ ok: true, status: 'EM_TRANSPORTE' });
 });
 
-/** Entrega: o código gerado no servidor tem de coincidir. Finaliza uma única vez. */
+/**
+ * Entrega (Fase D). O código do destinatário é validado só no servidor (hash, 5 tentativas).
+ * Anomalia na embalagem ou lacre diferente: não se marca entregue; regista-se falha e ocorrência.
+ */
 r.post('/orders/:id/deliver', async (c) => {
   const u = requireRole(c, 'courier');
-  const b = need<{ code: string; checklist: string[]; photo_key?: string; cash_collected?: boolean; lat?: number; lon?: number }>(await c.req.json(), {
-    code: (x) => (typeof x === 'string' && /^\d{4}$/.test(x) ? null : 'O código tem 4 dígitos.'),
-    checklist: (x) => (Array.isArray(x) ? null : 'Lista inválida.'),
+  const b = need<{
+    code?: string; packaging_condition?: (typeof PACKAGING)[number]; recipient_verdict?: 'sem_anomalias' | 'anomalia'; seal_code?: string;
+    photo_keys?: string[]; photo_key?: string; notes?: string; checklist?: string[]; cash_collected?: boolean; lat?: number; lon?: number;
+  }>(await c.req.json(), {
+    code: (x) => (x === undefined || x === null || x === '' || (typeof x === 'string' && /^\d{4}$/.test(x)) ? null : 'O código tem 4 dígitos.'),
+    packaging_condition: (x) => (x === undefined || (PACKAGING as readonly string[]).includes(String(x)) ? null : 'Estado da embalagem inválido.'),
+    recipient_verdict: (x) => (x === undefined || x === 'sem_anomalias' || x === 'anomalia' ? null : 'Resposta do destinatário inválida.'),
+    seal_code: v.optStr(40),
+    photo_keys: photoList,
     photo_key: v.optStr(200),
+    notes: v.optStr(500),
+    checklist: photoList,
     cash_collected: v.optBool(),
-    lat: (x) => (x === undefined || typeof x === 'number' ? null : 'inválido'),
-    lon: (x) => (x === undefined || typeof x === 'number' ? null : 'inválido'),
+    lat: optNum(-90, 90),
+    lon: optNum(-180, 180),
   });
   const o = await myOrder(c.env.DB, c.req.param('id'), u.id);
   if (o.status !== 'EM_TRANSPORTE') throw conflict('estado_invalido', o.status === 'ENTREGUE' ? 'Esta entrega já foi finalizada.' : 'Inicie o transporte antes de entregar.');
+  const cfg = await custodySettings(c.env.DB);
+  const packaging = b.packaging_condition ?? 'intacta';
+  const verdict = b.recipient_verdict ?? 'sem_anomalias';
+  const keys = await checkPhotoKeys(c.env.DB, [...(b.photo_keys ?? []), ...(b.photo_key ? [b.photo_key] : [])], proofPrefix(u.id), packaging === 'intacta' && verdict === 'sem_anomalias' ? cfg.dropoff_photos_min : Math.max(1, cfg.dropoff_photos_min));
+  const seal = b.seal_code ? b.seal_code.trim().toUpperCase() : null;
+  if (o.seal_code && !seal && packaging === 'intacta' && verdict === 'sem_anomalias') throw bad('lacre', 'Leia o código do lacre antes de entregar.');
+  const sealMismatch = !!o.seal_code && !!seal && seal !== o.seal_code;
+  const inspectionId = uuid();
+  const base = { orderId: o.id, stage: 'dropoff' as const, inspectorId: u.id, packaging, recipientVerdict: verdict, sealCode: seal, notes: b.notes ?? null };
+
+  if (packaging !== 'intacta' || verdict === 'anomalia' || sealMismatch) {
+    const category = sealMismatch ? 'lacre_divergente' : 'anomalia_na_entrega';
+    const incidentId = uuid();
+    const ok = await transition(c.env.DB, o, 'FALHA_ENTREGA', { id: u.id, role: 'courier' }, {
+      requireCourier: u.id,
+      note: INCIDENT_CATEGORIES[category],
+      extra: [
+        inspectionStmt(c.env.DB, inspectionId, { ...base, outcome: 'bloqueada' }),
+        ...evidenceStmts(c.env.DB, keys, { orderId: o.id, stage: 'dropoff', uploadedBy: u.id, inspectionId }),
+        incidentStmt(c.env.DB, incidentId, { orderId: o.id, reporterId: u.id, role: 'courier', category, description: b.notes?.trim() || INCIDENT_CATEGORIES[category], priority: 'alta' }),
+        custodyStmt(c.env.DB, { orderId: o.id, type: 'entrega_falhada', from: courierParty(u.id), to: courierParty(u.id), actorId: u.id, inspectionId, metadata: { motivo: category } }),
+        ...(sealMismatch
+          ? [riskStmt(c.env.DB, { rule: 'LACRE_DIVERGENTE', severity: 'alta', subjectType: 'order', subjectId: o.id, orderId: o.id, evidence: { lacre_lido: seal ?? '(sem lacre)' }, dedupe: `lacre:${o.id}` })]
+          : []),
+      ],
+    });
+    if (!ok) throw conflict('estado_mudou', 'O pedido mudou entretanto.');
+    const inc = await one<{ protocol: string }>(c.env.DB, 'SELECT protocol FROM incidents WHERE id = ?', incidentId);
+    return c.json({ ok: true, status: 'FALHA_ENTREGA', incident: inc?.protocol }, 201);
+  }
+
+  if (!b.code) throw bad('codigo', 'Peça ao destinatário o código de entrega.');
   if (o.delivery_code_attempts >= 5) throw conflict('codigo_bloqueado', 'Demasiadas tentativas de código. Contacte o apoio.');
   if ((await sha256(`${o.id}:${b.code}`)) !== o.delivery_code_hash) {
-    await run(c.env.DB, 'UPDATE orders SET delivery_code_attempts = delivery_code_attempts + 1 WHERE id = ?', o.id);
-    throw bad('codigo_errado', `Código errado. Restam ${4 - o.delivery_code_attempts} tentativas.`);
+    const n = o.delivery_code_attempts + 1;
+    await c.env.DB.batch([
+      c.env.DB.prepare('UPDATE orders SET delivery_code_attempts = delivery_code_attempts + 1 WHERE id = ?').bind(o.id),
+      ...(n >= cfg.otp_risk_threshold
+        ? [riskStmt(c.env.DB, { rule: 'OTP_FALHADO', severity: n >= 5 ? 'alta' : 'media', subjectType: 'courier', subjectId: u.id, orderId: o.id, evidence: { tentativas: n }, dedupe: `otp:${o.id}` })]
+        : []),
+    ]);
+    throw bad('codigo_errado', `Código errado. Restam ${Math.max(0, 5 - n)} tentativas.`);
   }
-  if (b.photo_key && !b.photo_key.startsWith(`couriers/${u.id}/proofs/`)) throw forbidden();
   if (o.payment_status === 'collect_on_delivery' && !b.cash_collected) throw bad('cobranca', 'Confirme que recebeu o pagamento do cliente.');
   const extra: Stmt[] = [
+    inspectionStmt(c.env.DB, inspectionId, { ...base, outcome: 'aprovada' }),
+    ...evidenceStmts(c.env.DB, keys, { orderId: o.id, stage: 'dropoff', uploadedBy: u.id, inspectionId }),
+    custodyStmt(c.env.DB, { orderId: o.id, type: 'entrega_confirmada', from: courierParty(u.id), to: 'destinatario', actorId: u.id, method: 'otp_destinatario', inspectionId }),
     c.env.DB.prepare("INSERT INTO delivery_proofs (id, order_id, kind, method, checklist, photo_r2_key, lat, lon, created_by) VALUES (?,?, 'delivery', ?, ?, ?, ?, ?, ?)").bind(
-      uuid(), o.id, b.photo_key ? 'codigo+foto' : 'codigo', JSON.stringify(b.checklist), b.photo_key ?? null, b.lat ?? null, b.lon ?? null, u.id,
+      uuid(), o.id, keys.length ? 'codigo+foto' : 'codigo', JSON.stringify(b.checklist ?? []), keys[0] ?? null, b.lat ?? null, b.lon ?? null, u.id,
     ),
     c.env.DB.prepare("UPDATE assignments SET status = 'completed' WHERE order_id = ? AND courier_id = ? AND status = 'accepted'").bind(o.id, u.id),
     c.env.DB.prepare('UPDATE location_updates SET order_id = NULL WHERE courier_id = ?').bind(u.id),
@@ -316,28 +459,46 @@ r.post('/orders/:id/deliver', async (c) => {
   return c.json({ ok: true, status: 'ENTREGUE' });
 });
 
+/** Ocorrência do estafeta. Com «fail_delivery», regista tentativa falhada (o pedido nunca fica «entregue» assim). */
 r.post('/orders/:id/incident', async (c) => {
   const u = requireRole(c, 'courier');
-  const b = need<{ kind: string; description: string; fail_delivery?: boolean }>(await c.req.json(), {
-    kind: v.oneOf('acidente', 'destinatario_ausente', 'morada_errada', 'volume_danificado', 'seguranca', 'outro'),
+  const b = need<{ kind: string; description: string; fail_delivery?: boolean; photo_keys?: string[] }>(await c.req.json(), {
+    kind: v.oneOf('acidente', 'destinatario_ausente', 'destinatario_recusa', 'morada_errada', 'volume_danificado', 'seguranca', 'outro'),
     description: v.str(3, 1000),
     fail_delivery: v.optBool(),
+    photo_keys: photoList,
   });
   const o = await myOrder(c.env.DB, c.req.param('id'), u.id);
-  const incident = c.env.DB.prepare('INSERT INTO incident_reports (id, order_id, reporter_id, kind, description) VALUES (?,?,?,?,?)').bind(uuid(), o.id, u.id, b.kind, b.description);
+  const keys = await checkPhotoKeys(c.env.DB, b.photo_keys, proofPrefix(u.id), 0);
+  const category = b.kind === 'volume_danificado' ? 'embalagem_danificada' : b.kind;
+  const incidentId = uuid();
+  const priority = b.kind === 'seguranca' || b.kind === 'acidente' ? 'urgente' : 'normal';
+  const stmts = [
+    incidentStmt(c.env.DB, incidentId, { orderId: o.id, reporterId: u.id, role: 'courier', category, description: b.description, priority }),
+    ...evidenceStmts(c.env.DB, keys, { orderId: o.id, stage: 'incident', uploadedBy: u.id, incidentId }),
+  ];
   if (b.fail_delivery && ['RECOLHIDO', 'EM_TRANSPORTE'].includes(o.status)) {
-    const ok = await transition(c.env.DB, o, 'FALHA_ENTREGA', { id: u.id, role: 'courier' }, { requireCourier: u.id, note: `${b.kind}: ${b.description}`, extra: [incident] });
+    const ok = await transition(c.env.DB, o, 'FALHA_ENTREGA', { id: u.id, role: 'courier' }, {
+      requireCourier: u.id,
+      note: `${INCIDENT_CATEGORIES[category] ?? b.kind}: ${b.description}`,
+      extra: [...stmts, custodyStmt(c.env.DB, { orderId: o.id, type: 'entrega_falhada', from: courierParty(u.id), to: courierParty(u.id), actorId: u.id, metadata: { motivo: category } })],
+    });
     if (!ok) throw conflict('estado_mudou', 'O pedido mudou entretanto.');
   } else {
-    await c.env.DB.batch([incident]);
+    await c.env.DB.batch(stmts);
   }
-  return c.json({ ok: true }, 201);
+  const inc = await one<{ protocol: string }>(c.env.DB, 'SELECT protocol FROM incidents WHERE id = ?', incidentId);
+  return c.json({ ok: true, protocol: inc?.protocol }, 201);
 });
 
 r.post('/orders/:id/returned', async (c) => {
   const u = requireRole(c, 'courier');
   const o = await myOrder(c.env.DB, c.req.param('id'), u.id);
-  const ok = await transition(c.env.DB, o, 'DEVOLVIDO', { id: u.id, role: 'courier' }, { requireCourier: u.id, note: 'Devolvido ao ponto de recolha' });
+  const ok = await transition(c.env.DB, o, 'DEVOLVIDO', { id: u.id, role: 'courier' }, {
+    requireCourier: u.id,
+    note: 'Devolvido ao ponto de recolha',
+    extra: [custodyStmt(c.env.DB, { orderId: o.id, type: 'devolucao_confirmada', from: courierParty(u.id), to: 'remetente', actorId: u.id })],
+  });
   if (!ok) throw conflict('estado_mudou', 'O pedido mudou entretanto.');
   return c.json({ ok: true });
 });

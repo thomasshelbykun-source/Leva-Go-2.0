@@ -107,11 +107,12 @@ export function Payments() {
   const { me, api } = useSession();
   const [status, setStatus] = useState('');
   const q = useLoad(() => api.get(`/admin/payments${status ? `?status=${status}` : ''}`), [status]);
-  const [dlg, setDlg] = useState<{ title: string; path: string; body: Record<string, unknown>; amount?: boolean; danger?: boolean } | null>(null);
+  const [dlg, setDlg] = useState<{ title: string; path: string; body: Record<string, unknown>; amount?: boolean; danger?: boolean; text?: string } | null>(null);
   const [amount, setAmount] = useState('');
+  const isSuper = me?.roles.includes('super_admin');
   return (
     <Page title="Pagamentos" wide>
-      <Notice>M-Pesa e e-Mola ficam simulados até existirem as integrações oficiais. Nunca guardamos PIN.</Notice>
+      <Notice>M-Pesa e e-Mola são pagamentos manuais. Confirme só depois de ver o valor e o código no extracto da conta LevaGo. Um print ou SMS enviado pelo cliente não confirma o pagamento.</Notice>
       <Loaded q={q}>
         {(d) => (
           <div className="stack">
@@ -120,6 +121,26 @@ export function Payments() {
               <Stat label="Pendente" value={mt(d.totals?.pending)} tone="warn" />
               <Stat label="Reembolsado" value={mt(d.totals?.refunded)} />
             </div>
+            {d.intents.some((p: any) => p.status === 'pending' && p.manual_txn_ref) && (
+              <Card>
+                <h3>Pagamentos manuais por confirmar</h3>
+                <p className="small">{isSuper ? 'Procure o código no extracto. Confirme só se o valor entrou na conta.' : 'Só o super-admin confirma pagamentos manuais.'}</p>
+                <Table
+                  head={['Cliente', 'Encomenda', 'Método', 'Valor', 'Código da transacção', 'Número', 'Enviado', '']}
+                  rows={d.intents
+                    .filter((p: any) => p.status === 'pending' && p.manual_txn_ref)
+                    .map((p: any) => [
+                      p.customer, p.order_code ?? 'Subscrição', PAY_METHOD[p.provider] ?? p.provider, <strong key="v">{mt(p.amount_cents)}</strong>, <code key="c">{p.manual_txn_ref}</code>, p.msisdn ?? '—', dateTime(p.manual_submitted_at),
+                      isSuper ? (
+                        <span className="row-end">
+                          <button className="link" onClick={() => setDlg({ title: `Confirmar ${mt(p.amount_cents)} (${p.manual_txn_ref})`, text: 'Confirme só se viu este código e este valor no extracto.', path: `/admin/payments/${p.id}/manual-review`, body: { decision: 'confirmar' } })}>Confirmar</button>
+                          <button className="link danger" onClick={() => setDlg({ title: 'Rejeitar pagamento', path: `/admin/payments/${p.id}/manual-review`, body: { decision: 'rejeitar' }, danger: true })}>Rejeitar</button>
+                        </span>
+                      ) : '',
+                    ])}
+                />
+              </Card>
+            )}
             <Card>
               <h3>Reembolsos</h3>
               <p className="small">Dupla validação: quem pede o reembolso não o pode aprovar.</p>
@@ -148,7 +169,8 @@ export function Payments() {
             <Table
               head={['Cliente', 'Encomenda', 'Método', 'Estado', 'Valor', 'Referência', 'Data', '']}
               rows={d.intents.map((p: any) => [
-                p.customer, p.order_code ?? (p.subscription_id ? 'Subscrição' : '—'), PAY_METHOD[p.provider] ?? p.provider, lbl(p.status), mt(p.amount_cents), p.provider_ref ?? '—', dateTime(p.created_at),
+                p.customer, p.order_code ?? (p.subscription_id ? 'Subscrição' : '—'), PAY_METHOD[p.provider] ?? p.provider, lbl(p.status), mt(p.amount_cents),
+                p.manual_txn_ref ? `${p.manual_txn_ref}${p.reviewed_by_name ? ` · revisto por ${p.reviewed_by_name}` : ''}` : p.provider_ref ?? '—', dateTime(p.created_at),
                 p.status === 'succeeded' ? <button className="link" onClick={() => { setAmount(String(p.amount_cents / 100)); setDlg({ title: 'Pedir reembolso', path: `/admin/payments/${p.id}/refunds`, body: {}, amount: true }); }}>Reembolsar</button> : p.failure_reason ?? '',
               ])}
             />
@@ -158,6 +180,7 @@ export function Payments() {
       {dlg && (
         <Confirm
           title={dlg.title}
+          text={dlg.text}
           reasonLabel="Motivo (fica na auditoria)"
           danger={dlg.danger}
           onClose={() => setDlg(null)}
@@ -464,7 +487,7 @@ export function Reports() {
 }
 
 // ------------------------------------------------------------------ 12 Definições
-const SETTING_LABELS: Record<string, string> = { company: 'Empresa', limits: 'Limites (só super-admin)', payments: 'Pagamentos (só super-admin)', courier_pay: 'Remuneração dos estafetas', scheduling: 'Agendamento', service_types: 'Modalidades', app: 'Aplicação' };
+const SETTING_LABELS: Record<string, string> = { custody: 'Protecção das encomendas', company: 'Empresa', limits: 'Limites (só super-admin)', payments: 'Pagamentos (só super-admin)', courier_pay: 'Remuneração dos estafetas', scheduling: 'Agendamento', service_types: 'Modalidades', app: 'Aplicação' };
 
 export function Settings() {
   const { api, me } = useSession();

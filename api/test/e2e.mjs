@@ -3,8 +3,7 @@
 // Corre a API real com uma base Postgres nova e temporária.
 // Uso: TEST_DATABASE_URL=postgres://postgres@localhost:5432/postgres npm run test:e2e
 import { spawn, execFileSync } from 'node:child_process';
-import { createHash, createHmac, randomBytes } from 'node:crypto';
-import http from 'node:http';
+import { createHmac, randomBytes } from 'node:crypto';
 import pg from 'pg';
 
 const PORT = 8799;
@@ -42,43 +41,17 @@ async function register(name, phone, app = 'cliente') {
 const login = async (phone, app) => (await api('POST', '/auth/login', { body: { phone, password: 'segredo123', app } })).data.token;
 
 
-// Servidor falso da Pagar: valida a assinatura HMAC e guarda os pagamentos.
-const PAGAR_PORT = 8798;
-const PAGAR = { key: 'sk_test_e2e', signing: 'assinatura-teste', webhook: 'webhook-teste' };
-const pagarPayments = new Map();
-let pagarBadSignatures = 0;
-const pagarServer = http.createServer(async (req, res) => {
-  let raw = '';
-  for await (const ch of req) raw += ch;
-  const send = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
-  if (req.headers.authorization !== `Bearer ${PAGAR.key}`) return send(401, { error: 'unauthorized' });
-  const url = new URL(req.url, 'http://x');
-  if (req.method === 'POST' && url.pathname === '/api/v1/payments') {
-    const ts = req.headers['x-pagar-timestamp'];
-    const nonce = req.headers['x-pagar-nonce'];
-    const canonical = [ts, nonce, 'POST', url.pathname, createHash('sha256').update(raw).digest('hex')].join('\n');
-    const expected = 'v1=' + createHmac('sha256', PAGAR.signing).update(canonical).digest('hex');
-    if (req.headers['x-pagar-signature'] !== expected || !req.headers['idempotency-key']) { pagarBadSignatures++; return send(401, { error: 'bad_signature' }); }
-    const b = JSON.parse(raw);
-    const existing = [...pagarPayments.values()].find((p) => p.reference === b.reference);
-    if (existing) return send(202, { payment: existing });
-    const payment = { id: `pay_${randomBytes(6).toString('hex')}`, status: 'PROCESSING', amountMzn: b.amountMzn, method: b.method, reference: b.reference, payerPhone: b.payerPhone, environment: 'TEST' };
-    pagarPayments.set(payment.id, payment);
-    return send(202, { payment });
-  }
-  const m = url.pathname.match(/^\/api\/v1\/payments\/([\w-]+)$/);
-  if (req.method === 'GET' && m && pagarPayments.has(m[1])) return send(200, { payment: pagarPayments.get(m[1]) });
-  send(404, { error: 'not_found' });
-});
-const pagarWebhook = (payment, eventId, secret = PAGAR.webhook) => {
-  const raw = JSON.stringify({ id: eventId, type: `payment.${payment.status.toLowerCase()}`, data: { payment } });
-  const t = Math.floor(Date.now() / 1000);
-  const sig = createHmac('sha256', secret).update(`${t}.${raw}`).digest('hex');
-  return fetch(`${BASE}/payments/webhook/pagar`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Pagar-Event-Id': eventId, 'Pagar-Signature': `t=${t},v1=${sig}` }, body: raw });
-};
+// Foto mínima (PNG 1x1) para provas de recolha e entrega.
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+async function photo(token, path = '/courier/proofs/upload') {
+  const f = new FormData();
+  f.append('file', new Blob([PNG], { type: 'image/png' }), 'foto.png');
+  const r = await api('POST', path, { token, form: f });
+  if (r.status !== 201) throw new Error(`upload ${r.status} ${JSON.stringify(r.data)}`);
+  return r.data.photo_key;
+}
 
 async function main() {
-  await new Promise((r) => pagarServer.listen(PAGAR_PORT, '127.0.0.1', r));
   console.log('Preparar base de dados local…');
   await adminSql(ADMIN_URL, `CREATE DATABASE ${DB_NAME}`);
   execFileSync('npx', ['tsx', 'scripts/migrate.ts', '--seed'], { stdio: 'pipe', env: { ...process.env, DATABASE_URL: dbUrl } });
@@ -86,7 +59,7 @@ async function main() {
   const dev = spawn('npx', ['tsx', 'scripts/dev.ts'], {
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
-    env: { ...process.env, DATABASE_URL: dbUrl, PORT: String(PORT), ENVIRONMENT: 'test', PAYMENTS_WEBHOOK_SECRET: 'segredo-teste', PAGAR_API_BASE_URL: `http://127.0.0.1:${PAGAR_PORT}/api/v1`, PAGAR_API_KEY: PAGAR.key, PAGAR_SIGNING_SECRET: PAGAR.signing, PAGAR_WEBHOOK_SECRET: PAGAR.webhook, CORS_ORIGINS: 'http://localhost:5173' },
+    env: { ...process.env, DATABASE_URL: dbUrl, PORT: String(PORT), ENVIRONMENT: 'test', PAYMENTS_WEBHOOK_SECRET: 'segredo-teste', CORS_ORIGINS: 'http://localhost:5173' },
   });
   let log = '';
   dev.stdout.on('data', (d) => (log += d));
@@ -129,8 +102,9 @@ async function main() {
     ok(qe.data.total_cents > qn.data.total_cents, 'expressa custa mais que normal');
 
     console.log('Pedido e pagamento (BR-06)');
-    const orderBody = { quote_id: qn.data.quote_id, recipient_name: 'Dino Destinatário', recipient_phone: '843000001', category: 'documentos', description: 'Envelope A4', payment_method: 'sandbox' };
+    const orderBody = { quote_id: qn.data.quote_id, recipient_name: 'Dino Destinatário', recipient_phone: '843000001', category: 'documentos', description: 'Envelope A4', payment_method: 'sandbox', declaration_accepted: true, quantity: 1, declared_value_mt: 500, fragile: false };
     ok((await api('POST', '/orders', { token: cli.token, body: orderBody })).status === 400, 'sem Idempotency-Key é rejeitado');
+    ok((await api('POST', '/orders', { token: cli.token, body: { ...orderBody, declaration_accepted: false }, idem: 'pedido-semdecl' })).status === 400, 'sem declaração do remetente não submete');
     const o1 = await api('POST', '/orders', { token: cli.token, body: orderBody, idem: 'pedido-0001' });
     const o1b = await api('POST', '/orders', { token: cli.token, body: orderBody, idem: 'pedido-0001' });
     ok(o1.status === 201 && o1.data.status === 'AGUARDA_PAGAMENTO' && /^\d{4}$/.test(o1.data.delivery_code), 'pedido criado, aguarda pagamento, código de entrega gerado');
@@ -138,6 +112,8 @@ async function main() {
     ok((await api('POST', '/orders', { token: cli.token, body: orderBody, idem: 'pedido-0002' })).status === 409, 'cotação já usada não cria segundo pedido');
     const orderId = o1.data.id;
     const deliveryCode = o1.data.delivery_code;
+    const pickupCode = o1.data.pickup_code;
+    ok(/^\d{4}$/.test(pickupCode) && o1.data.has_pickup_code, 'código de recolha gerado e guardado só como hash');
 
     const pi = await api('POST', '/payments/intents', { token: cli.token, body: { order_id: orderId, provider: 'sandbox', msisdn: '842000001' }, idem: 'pag-0001' });
     ok(pi.status === 201 && pi.data.status === 'pending', 'tentativa de pagamento criada no servidor');
@@ -179,20 +155,31 @@ async function main() {
       api('POST', `/courier/orders/${orderId}/accept`, { token: c2.token }),
     ]);
     const winner = a1.status === 200 ? c1 : c2;
+    const other0 = a1.status === 200 ? c2 : c1;
     ok([a1.status, a2.status].sort().join(',') === '200,409', 'dois estafetas em simultâneo: só um aceita');
     const loser = winner === c1 ? c2 : c1;
     ok((await api('GET', `/courier/orders/${orderId}`, { token: loser.token })).status === 404, 'o outro estafeta deixa de ver o pedido');
 
     console.log('Recolha, transporte e entrega (BR-09)');
     ok((await api('POST', `/courier/orders/${orderId}/deliver`, { token: winner.token, body: { code: deliveryCode, checklist: [] } })).status === 409, 'não entrega sem recolher');
-    ok((await api('POST', `/courier/orders/${orderId}/pickup`, { token: winner.token, body: { checklist: ['volume confere'] } })).status === 200, 'recolha confirmada com prova');
+    const insp = { packaging_condition: 'intacta', external_match: 'sim', seal_code: 'LACRE-001' };
+    ok((await api('POST', `/courier/orders/${orderId}/pickup`, { token: winner.token, body: { ...insp, pickup_code: pickupCode } })).data.error === 'fotos', 'recolha sem fotografia é rejeitada');
+    const ph1 = await photo(winner.token);
+    ok((await api('POST', `/courier/orders/${orderId}/pickup`, { token: other0.token, body: { ...insp, pickup_code: pickupCode, photo_keys: [ph1] } })).status === 404, 'estafeta não atribuído não confirma recolha alheia');
+    const wrongPick = pickupCode === '0000' ? '1111' : '0000';
+    ok((await api('POST', `/courier/orders/${orderId}/pickup`, { token: winner.token, body: { ...insp, pickup_code: wrongPick, photo_keys: [ph1] } })).data.error === 'codigo_errado', 'código de recolha errado não muda o estado');
+    const pk = await api('POST', `/courier/orders/${orderId}/pickup`, { token: winner.token, body: { ...insp, pickup_code: pickupCode, photo_keys: [ph1], measured_weight_kg: 1 } });
+    ok(pk.status === 200 && pk.data.status === 'RECOLHIDO', 'recolha confirmada com inspecção, foto e código do remetente');
+    ok((await api('POST', `/courier/orders/${orderId}/pickup`, { token: winner.token, body: { ...insp, pickup_code: pickupCode, photo_keys: [ph1] } })).data.status === 'RECOLHIDO', 'repetir o toque não cria segunda recolha');
+    ok((await adminSql(dbUrl, `SELECT count(*)::int AS n FROM custody_events WHERE order_id = '${orderId}' AND event_type = 'recolha_confirmada'`)).rows[0].n === 1, 'um só evento de custódia de recolha');
     await api('POST', '/courier/location', { token: winner.token, body: { lat: -17.87, lon: 36.89 } });
     ok((await api('POST', `/courier/orders/${orderId}/start`, { token: winner.token })).status === 200, 'em transporte');
     const track = await api('GET', `/orders/${orderId}`, { token: cli.token });
     ok(track.data.courier_location && track.data.courier?.name === winner.user.name.split(' ')[0], 'cliente vê posição e primeiro nome do estafeta');
     const wrong = deliveryCode === '0000' ? '1111' : '0000';
-    ok((await api('POST', `/courier/orders/${orderId}/deliver`, { token: winner.token, body: { code: wrong, checklist: [] } })).data.error === 'codigo_errado', 'código errado rejeitado');
-    ok((await api('POST', `/courier/orders/${orderId}/deliver`, { token: winner.token, body: { code: deliveryCode, checklist: ['entregue em mão'] } })).status === 200, 'entrega finalizada com código válido');
+    ok((await api('POST', `/courier/orders/${orderId}/deliver`, { token: winner.token, body: { code: wrong, seal_code: 'LACRE-001' } })).data.error === 'codigo_errado', 'código errado rejeitado');
+    ok((await api('POST', `/courier/orders/${orderId}/deliver`, { token: winner.token, body: { code: deliveryCode } })).data.error === 'lacre', 'entrega pede o lacre registado na recolha');
+    ok((await api('POST', `/courier/orders/${orderId}/deliver`, { token: winner.token, body: { code: deliveryCode, packaging_condition: 'intacta', recipient_verdict: 'sem_anomalias', seal_code: 'lacre-001' } })).status === 200, 'entrega finalizada com código válido e lacre igual');
     ok((await api('POST', `/courier/orders/${orderId}/deliver`, { token: winner.token, body: { code: deliveryCode, checklist: [] } })).status === 409, 'entrega não se finaliza duas vezes');
     const done = await api('GET', `/orders/${orderId}`, { token: cli.token });
     ok(done.data.status === 'ENTREGUE' && !done.data.courier_location, 'estado final ENTREGUE e localização deixa de ser exposta');
@@ -201,6 +188,12 @@ async function main() {
     const earn = await api('GET', '/courier/earnings?period=day', { token: winner.token });
     ok(earn.data.total === offer.earning_cents && earn.data.entries.length === 1, 'extrato do estafeta concilia com a entrega');
     ok((await api('POST', `/admin/orders/${orderId}/status`, { token: adminToken, body: { to: 'CANCELADO', reason: 'teste' } })).status === 409, 'admin não altera estado final');
+    ok(done.data.custody.map((x) => x.event_type).join('>') === 'recolha_confirmada>entrega_confirmada', 'cliente vê a cadeia de custódia');
+    let immutable = false;
+    try { await adminSql(dbUrl, `DELETE FROM custody_events WHERE order_id = '${orderId}'`); } catch { immutable = true; }
+    let evidenceSafe = false;
+    try { await adminSql(dbUrl, `DELETE FROM file_blobs WHERE key = '${ph1}'`); } catch { evidenceSafe = true; }
+    ok(immutable && evidenceSafe, 'eventos de custódia e fotos de prova não se apagam');
 
     console.log('Isolamento (BR-05)');
     const other = await register('Gil Outro', '846000001');
@@ -248,25 +241,80 @@ async function main() {
     ok(csv.headers.get('content-type')?.startsWith('text/csv') && (await csv.text()).includes(o1.data.code), 'exportação CSV');
 
 
-    console.log('Pagamentos M-Pesa pela Pagar (servidor falso)');
+    {
+    console.log('Pagamentos manuais M-Pesa e e-Mola');
     const curPay = (await api('GET', '/admin/settings', { token: adminToken })).data.settings.find((x) => x.key === 'payments')?.value ?? {};
-    const payVal = { ...curPay, mpesa_enabled: true, emola_enabled: true, sandbox_enabled: true };
-    ok((await api('PUT', '/admin/settings/payments', { token: adminToken, body: { value: payVal, reason: 'Ligar M-Pesa e e-Mola pela Pagar' } })).status === 200, 'super-admin liga M-Pesa e e-Mola');
+    ok((await api('PUT', '/admin/settings/payments', { token: adminToken, body: { value: { ...curPay, mpesa_enabled: true, mpesa_number: '' }, reason: 'Ligar sem número' } })).status === 200 && (await api('GET', '/config')).data.payment_methods.mpesa === false, 'M-Pesa sem número de recepção fica escondido');
+    ok((await api('PUT', '/admin/settings/payments', { token: adminToken, body: { value: { ...curPay, mpesa_enabled: true, emola_enabled: true, mpesa_number: '841234567', emola_number: '861234567', account_name: 'LevaGo Lda' }, reason: 'Pagamentos manuais' } })).status === 200, 'super-admin liga M-Pesa e e-Mola manuais');
+    ok((await api('GET', '/config')).data.payment_methods.mpesa === true, 'M-Pesa aparece com número configurado');
     const mq = await api('POST', '/quotes', { token: cli.token, body: { pickup: A, dropoff: B, weight_kg: 1, service_type: 'normal' } });
     const mo = await api('POST', '/orders', { token: cli.token, body: { ...orderBody, quote_id: mq.data.quote_id, payment_method: 'mpesa' }, idem: 'pedido-mpesa-1' });
     ok(mo.status === 201 && mo.data.status === 'AGUARDA_PAGAMENTO', 'encomenda M-Pesa aguarda pagamento');
-    const mpi = await api('POST', '/payments/intents', { token: cli.token, body: { order_id: mo.data.id, provider: 'mpesa', msisdn: '840000001' }, idem: 'pag-mpesa-1' });
-    ok(mpi.status === 201 || mpi.status === 200, `cobrança enviada à Pagar (${mpi.status})`);
-    ok(pagarBadSignatures === 0 && pagarPayments.size === 1, 'a Pagar aceitou a assinatura HMAC');
-    const pp = [...pagarPayments.values()][0];
-    ok(pp && pp.payerPhone === '840000001' && pp.method === 'MPESA' && Number.isInteger(pp.amountMzn), 'número local, método e valor inteiro certos');
-    ok(pp.reference === mpi.data.id, 'referência é a tentativa de pagamento');
-    pp.status = 'PAID';
-    ok((await pagarWebhook(pp, 'evt_falso', 'segredo-errado')).status === 401, 'webhook com assinatura errada é recusado');
-    ok((await api('GET', `/orders/${mo.data.id}`, { token: cli.token })).data.status === 'AGUARDA_PAGAMENTO', 'assinatura errada não muda nada');
-    ok((await pagarWebhook(pp, 'evt_1')).status === 200, 'webhook válido aceite');
-    ok((await api('GET', `/orders/${mo.data.id}`, { token: cli.token })).data.status === 'PENDENTE_ATRIBUICAO', 'PAID confirma a encomenda');
-    ok((await pagarWebhook(pp, 'evt_1')).status === 200 && (await api('GET', `/orders/${mo.data.id}`, { token: cli.token })).data.status === 'PENDENTE_ATRIBUICAO', 'evento repetido não tem segundo efeito');
+    const mpi = await api('POST', '/payments/intents', { token: cli.token, body: { order_id: mo.data.id, provider: 'mpesa', msisdn: '842000001' }, idem: 'pag-mpesa-1' });
+    ok(mpi.status === 201 && mpi.data.manual?.number === '841234567' && mpi.data.manual.reference === mo.data.code, 'cliente recebe número, valor e referência para transferir');
+    ok((await api('POST', `/admin/payments/${mpi.data.id}/manual-review`, { token: adminToken, body: { decision: 'confirmar', reason: 'Vi no extracto' } })).status === 400, 'não confirma sem código da transacção');
+    ok((await api('POST', `/payments/intents/${mpi.data.id}/manual-reference`, { token: cli.token, body: { txn_ref: 'ABC12XYZ9' } })).status === 200, 'cliente indica o código da transacção');
+    ok((await api('GET', `/orders/${mo.data.id}`, { token: cli.token })).data.status === 'AGUARDA_PAGAMENTO', 'código indicado pelo cliente não confirma o pagamento');
+    ok((await api('POST', `/admin/payments/${mpi.data.id}/manual-review`, { token: admin2Token, body: { decision: 'confirmar', reason: 'Vi no extracto' } })).status === 403, 'admin sem papel financeiro não confirma pagamentos');
+    ok((await api('POST', `/admin/payments/${mpi.data.id}/manual-review`, { token: adminToken, body: { decision: 'confirmar', reason: 'Valor visto no extracto M-Pesa' } })).status === 200, 'super-admin confirma o pagamento');
+    ok((await api('GET', `/orders/${mo.data.id}`, { token: cli.token })).data.status === 'PENDENTE_ATRIBUICAO', 'pedido avança depois da confirmação');
+    ok((await api('POST', `/admin/payments/${mpi.data.id}/manual-review`, { token: adminToken, body: { decision: 'confirmar', reason: 'de novo' } })).status === 409, 'confirmação não se repete');
+    const mq2 = await api('POST', '/quotes', { token: cli.token, body: { pickup: A, dropoff: B, weight_kg: 1, service_type: 'normal' } });
+    const mo2 = await api('POST', '/orders', { token: cli.token, body: { ...orderBody, quote_id: mq2.data.quote_id, payment_method: 'mpesa' }, idem: 'pedido-mpesa-2' });
+    const mpi2 = await api('POST', '/payments/intents', { token: cli.token, body: { order_id: mo2.data.id, provider: 'mpesa', msisdn: '842000001' }, idem: 'pag-mpesa-2' });
+    ok((await api('POST', `/payments/intents/${mpi2.data.id}/manual-reference`, { token: cli.token, body: { txn_ref: 'abc12xyz9' } })).status === 409, 'o mesmo código de transacção não paga dois pedidos');
+    await api('POST', `/payments/intents/${mpi2.data.id}/manual-reference`, { token: cli.token, body: { txn_ref: 'FAKE00001' } });
+    ok((await api('POST', `/admin/payments/${mpi2.data.id}/manual-review`, { token: adminToken, body: { decision: 'rejeitar', reason: 'Valor não entrou na conta' } })).data.status === 'failed', 'pagamento rejeitado quando o valor não entrou');
+
+    console.log('Protecção da encomenda e cadeia de custódia');
+    const sq = await api('POST', '/quotes', { token: cli.token, body: { pickup: A, dropoff: B, weight_kg: 1, service_type: 'normal' } });
+    const so = await api('POST', '/orders', { token: cli.token, body: { ...orderBody, quote_id: sq.data.quote_id }, idem: 'pedido-seg-1' });
+    const sspi = await api('POST', '/payments/intents', { token: cli.token, body: { order_id: so.data.id, provider: 'sandbox', msisdn: '842000001' }, idem: 'pag-seg-1' });
+    await api('POST', `/payments/intents/${sspi.data.id}/simulate`, { token: cli.token, body: { outcome: 'succeeded' } });
+    ok((await api('POST', `/courier/orders/${so.data.id}/accept`, { token: winner.token })).status === 200, 'estafeta aceita novo pedido');
+    const sp1 = await photo(winner.token);
+    const blocked = await api('POST', `/courier/orders/${so.data.id}/pickup`, { token: winner.token, body: { packaging_condition: 'aberta', external_match: 'nao_verificavel', photo_keys: [sp1], notes: 'Fita rasgada' } });
+    ok(blocked.data.status === 'RECOLHA_BLOQUEADA' && /^OC-/.test(blocked.data.incident), 'embalagem aberta suspende a recolha e abre ocorrência');
+    ok((await api('POST', `/courier/orders/${so.data.id}/start`, { token: winner.token })).status === 409, 'recolha suspensa não segue para transporte');
+    ok((await api('POST', `/orders/${so.data.id}/cancel`, { token: cli.token, body: { reason: 'quero' } })).status === 409, 'cliente não cancela durante a análise');
+    ok((await api('POST', `/admin/orders/${so.data.id}/status`, { token: adminToken, body: { to: 'ACEITE', reason: 'Remetente reembalou com fita nova' } })).status === 200, 'admin autoriza retomar a recolha, com motivo');
+    const sp2 = await photo(winner.token);
+    ok((await api('POST', `/courier/orders/${so.data.id}/pickup`, { token: winner.token, body: { packaging_condition: 'intacta', external_match: 'sim', photo_keys: [sp1], pickup_code: so.data.pickup_code } })).data.error === 'fotos', 'foto já usada como prova não se reutiliza');
+    ok((await api('POST', `/courier/orders/${so.data.id}/pickup`, { token: winner.token, body: { packaging_condition: 'intacta', external_match: 'sim', seal_code: 'L-777', photo_keys: [sp2], pickup_code: so.data.pickup_code } })).data.status === 'RECOLHIDO', 'recolha retomada');
+    await api('POST', `/courier/orders/${so.data.id}/start`, { token: winner.token });
+    const sdWrong = so.data.delivery_code === '0000' ? '1111' : '0000';
+    for (let k = 0; k < 3; k++) await api('POST', `/courier/orders/${so.data.id}/deliver`, { token: winner.token, body: { code: sdWrong, packaging_condition: 'intacta', recipient_verdict: 'sem_anomalias', seal_code: 'L-777' } });
+    const sp3 = await photo(winner.token);
+    const sealBad = await api('POST', `/courier/orders/${so.data.id}/deliver`, { token: winner.token, body: { photo_keys: [sp3], code: so.data.delivery_code, packaging_condition: 'intacta', recipient_verdict: 'sem_anomalias', seal_code: 'L-000' } });
+    ok(sealBad.data.status === 'FALHA_ENTREGA', 'lacre diferente impede a entrega e regista falha');
+    ok((await api('GET', `/orders/${so.data.id}`, { token: cli.token })).data.status === 'FALHA_ENTREGA', 'pedido não fica entregue');
+    const cph = await photo(cli.token, '/evidence/upload');
+    const inc1 = await api('POST', `/orders/${so.data.id}/incidents`, { token: cli.token, body: { category: 'aberto_violado', description: 'O destinatário diz que a caixa chegou aberta', photo_keys: [cph] }, idem: 'reclama-0001' });
+    const inc1b = await api('POST', `/orders/${so.data.id}/incidents`, { token: cli.token, body: { category: 'aberto_violado', description: 'O destinatário diz que a caixa chegou aberta' }, idem: 'reclama-0001' });
+    ok(inc1.status === 201 && inc1b.data.id === inc1.data.id, 'reclamação com protocolo, sem duplicar ao repetir');
+    ok((await api('POST', `/orders/${so.data.id}/incidents`, { token: other.token, body: { category: 'outro', description: 'tentativa alheia' }, idem: 'reclama-0002' })).status === 404, 'outro cliente não reclama pedido alheio');
+    const list = await api('GET', '/admin/security/incidents', { token: adminToken });
+    ok(list.data.items.filter((x) => x.order_id === so.data.id).length === 3, 'centro de ocorrências mostra as 3 ocorrências do pedido');
+    const dossier = await api('GET', `/admin/security/incidents/${inc1.data.id}`, { token: adminToken });
+    ok(dossier.data.custody.length >= 3 && dossier.data.inspections.length === 3 && dossier.data.evidence.length === 4, 'dossiê com custódia, inspecções e provas');
+    ok(dossier.data.order.otp.validated === false && dossier.data.order.otp.failed_attempts === 3 && !JSON.stringify(dossier.data).includes(so.data.delivery_code_hash ?? 'xx-nunca'), 'dossiê mostra só o resultado do código, nunca o código');
+    const evd = dossier.data.evidence[0];
+    const evRes = await fetch(`${BASE}/admin/security/evidence/${evd.id}`, { headers: { authorization: `Bearer ${adminToken}` } });
+    ok(evRes.status === 200 && evRes.headers.get('x-content-sha256') === evd.sha256, 'admin vê a prova com checksum');
+    ok((await fetch(`${BASE}/admin/security/evidence/${evd.id}`, { headers: { authorization: `Bearer ${cli.token}` } })).status === 403, 'cliente não descarrega provas privadas');
+    ok((await api('POST', `/admin/security/incidents/${inc1.data.id}/action`, { token: adminToken, body: { action: 'pedir_esclarecimento', body: 'Envie foto da caixa aberta, por favor.' } })).data.status === 'aguarda_provas', 'admin pede esclarecimentos');
+    ok((await api('POST', `/incidents/${inc1.data.id}/reply`, { token: cli.token, body: { body: 'Já enviei a foto.' } })).status === 201, 'cliente responde');
+    ok((await api('POST', `/admin/security/incidents/${inc1.data.id}/action`, { token: adminToken, body: { action: 'resolver', body: 'Lacre trocado durante o transporte. Devolução ao remetente.' } })).data.status === 'resolvida', 'admin regista decisão fundamentada');
+    const mine = await api('GET', `/incidents/${inc1.data.id}`, { token: cli.token });
+    ok(mine.data.status === 'resolvida' && mine.data.notes.some((n) => n.kind === 'decisao'), 'cliente vê a decisão');
+    const risks = await api('GET', '/admin/security/risk-signals', { token: adminToken });
+    const codes = risks.data.map((x) => x.rule_code);
+    ok(['RECOLHA_SUSPENSA', 'LACRE_DIVERGENTE', 'OTP_FALHADO', 'CODIGO_PAGAMENTO_REPETIDO'].every((c) => codes.includes(c)), 'LevaGo Safe regista sinais para revisão humana');
+    ok((await api('POST', `/admin/security/risk-signals/${risks.data[0].id}/review`, { token: adminToken, body: { status: 'descartado', note: 'Explicado pelo estafeta' } })).status === 200, 'admin revê o sinal com nota');
+    const audit = await api('GET', `/admin/security/audit?entity=evidence`, { token: adminToken });
+    ok(audit.data.items.some((x) => x.action === 'evidence.view'), 'acesso à prova fica na auditoria');
+    ok((await api('GET', '/admin/security/summary', { token: adminToken })).data.by_category.length > 0, 'indicadores de segurança');
+    }
     console.log('Planos, Expressa e créditos expressos');
     const pc = await register('Paula Plano', '844000002');
     const p_h0 = await api('GET', '/home', { token: pc.token });

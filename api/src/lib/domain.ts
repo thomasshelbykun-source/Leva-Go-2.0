@@ -163,6 +163,7 @@ export type OrderStatus =
   | 'PENDENTE_ATRIBUICAO'
   | 'ATRIBUIDO'
   | 'ACEITE'
+  | 'RECOLHA_BLOQUEADA'
   | 'RECOLHIDO'
   | 'EM_TRANSPORTE'
   | 'ENTREGUE'
@@ -174,14 +175,16 @@ export type OrderStatus =
 export type Actor = 'customer' | 'courier' | 'admin' | 'system';
 
 export const FINAL_STATUSES: OrderStatus[] = ['ENTREGUE', 'CANCELADO', 'DEVOLVIDO'];
-export const ACTIVE_COURIER_STATUSES: OrderStatus[] = ['ACEITE', 'RECOLHIDO', 'EM_TRANSPORTE'];
+export const ACTIVE_COURIER_STATUSES: OrderStatus[] = ['ACEITE', 'RECOLHA_BLOQUEADA', 'RECOLHIDO', 'EM_TRANSPORTE'];
 
 /** Transições permitidas e quem as pode fazer (secção 6 da especificação). */
 export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, Actor[]>>> = {
   AGUARDA_PAGAMENTO: { PENDENTE_ATRIBUICAO: ['system'], CANCELADO: ['customer', 'admin', 'system'] },
   PENDENTE_ATRIBUICAO: { ATRIBUIDO: ['admin'], ACEITE: ['courier'], CANCELADO: ['customer', 'admin'] },
   ATRIBUIDO: { ACEITE: ['courier'], PENDENTE_ATRIBUICAO: ['courier', 'admin'], CANCELADO: ['customer', 'admin'] },
-  ACEITE: { RECOLHIDO: ['courier'], PENDENTE_ATRIBUICAO: ['admin'], CANCELADO: ['customer', 'admin'] },
+  ACEITE: { RECOLHIDO: ['courier'], RECOLHA_BLOQUEADA: ['courier'], PENDENTE_ATRIBUICAO: ['admin'], CANCELADO: ['customer', 'admin'] },
+  // Recolha suspensa (embalagem aberta, danificada ou divergente): só o Admin decide, com motivo.
+  RECOLHA_BLOQUEADA: { ACEITE: ['admin'], PENDENTE_ATRIBUICAO: ['admin'], CANCELADO: ['admin'] },
   RECOLHIDO: { EM_TRANSPORTE: ['courier'], FALHA_ENTREGA: ['courier', 'admin'] },
   EM_TRANSPORTE: { ENTREGUE: ['courier'], FALHA_ENTREGA: ['courier', 'admin'] },
   FALHA_ENTREGA: { EM_TRANSPORTE: ['admin'], DEVOLUCAO_PENDENTE: ['admin'] },
@@ -200,6 +203,7 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
   PENDENTE_ATRIBUICAO: 'À procura de estafeta',
   ATRIBUIDO: 'Estafeta atribuído',
   ACEITE: 'Estafeta a caminho da recolha',
+  RECOLHA_BLOQUEADA: 'Recolha suspensa para verificação',
   RECOLHIDO: 'Encomenda recolhida',
   EM_TRANSPORTE: 'Em transporte',
   ENTREGUE: 'Entregue',

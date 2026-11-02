@@ -354,7 +354,7 @@ export function AdminOrders() {
 }
 
 const OVERRIDES: [string, string][] = [
-  ['CANCELADO', 'Cancelar'], ['PENDENTE_ATRIBUICAO', 'Voltar a pendente'], ['FALHA_ENTREGA', 'Marcar falha'], ['DEVOLUCAO_PENDENTE', 'Devolução pendente'], ['DEVOLVIDO', 'Marcar devolvido'], ['EM_TRANSPORTE', 'Retomar transporte'],
+  ['ACEITE', 'Retomar recolha'], ['CANCELADO', 'Cancelar'], ['PENDENTE_ATRIBUICAO', 'Voltar a pendente'], ['FALHA_ENTREGA', 'Marcar falha'], ['DEVOLUCAO_PENDENTE', 'Devolução pendente'], ['DEVOLVIDO', 'Marcar devolvido'], ['EM_TRANSPORTE', 'Retomar transporte'],
 ];
 
 export function AdminOrderDetail() {
@@ -401,17 +401,17 @@ export function AdminOrderDetail() {
               </Card>
               <Card>
                 <h3>Pagamentos</h3>
-                <Table head={['Método', 'Estado', 'Valor', 'Referência', 'Data']} rows={o.payments.map((p: any) => [PAY_METHOD[p.provider] ?? p.provider, lbl(p.status), mt(p.amount_cents), p.provider_ref ?? '—', dateTime(p.created_at)])} />
+                <Table head={['Método', 'Estado', 'Valor', 'Referência', 'Data']} rows={o.payments.map((p: any) => [PAY_METHOD[p.provider] ?? p.provider, lbl(p.status), mt(p.amount_cents), p.manual_txn_ref ?? p.provider_ref ?? '—', dateTime(p.created_at)])} />
               </Card>
               <Card>
                 <h3>Provas</h3>
                 <Table head={['Momento', 'Método', 'Lista', 'Foto', 'Data']} rows={o.proofs.map((p: any) => [p.kind === 'pickup' ? 'Recolha' : 'Entrega', lbl(p.method), JSON.parse(p.checklist ?? '[]').join('; '), p.has_photo ? 'Sim' : 'Não', dateTime(p.created_at)])} />
               </Card>
               <Card>
-                <h3>Incidentes</h3>
+                <h3>Ocorrências</h3>
                 <Table
-                  head={['Tipo', 'Descrição', 'Estado', 'Data', '']}
-                  rows={o.incidents.map((i: any) => [lbl(i.kind), i.description, lbl(i.status), dateTime(i.created_at), i.status !== 'resolved' ? <button className="link" onClick={() => setDlg({ title: 'Resolver incidente', path: `/admin/incidents/${i.id}/resolve`, body: {} })}>Resolver</button> : ''])}
+                  head={['Protocolo', 'Tipo', 'Origem', 'Estado', 'Data']}
+                  rows={o.incidents.map((i: any) => [<Link key="p" to={`/admin/seguranca/${i.id}`}>{i.protocol}</Link>, lbl(i.kind), lbl(i.reporter_role), lbl(i.status), dateTime(i.created_at)])}
                 />
               </Card>
             </div>
@@ -445,7 +445,7 @@ export function AdminOrderDetail() {
                   <h3>Alterar estado</h3>
                   <p className="small">Use só em excepções. Fica registado com o motivo. Estados finais não se alteram.</p>
                   <div className="chips">
-                    {OVERRIDES.map(([to, label]) => (
+                    {OVERRIDES.filter(([to]) => to !== 'ACEITE' || o.status === 'RECOLHA_BLOQUEADA').map(([to, label]) => (
                       <button key={to} className="chip" onClick={() => setDlg({ title: label, path: `/admin/orders/${id}/status`, body: { to }, danger: to === 'CANCELADO' })}>
                         {label}
                       </button>
@@ -457,6 +457,12 @@ export function AdminOrderDetail() {
                 <h3>Linha temporal</h3>
                 <Timeline events={o.events} />
               </Card>
+              {o.custody?.length > 0 && (
+                <Card>
+                  <h3>Cadeia de custódia</h3>
+                  <Table head={['Evento', 'De', 'Para', 'Método', 'Data']} rows={o.custody.map((c: any) => [lbl(c.event_type), c.from_party, c.to_party, c.method ?? '—', dateTime(c.occurred_at)])} />
+                </Card>
+              )}
               <Card>
                 <h3>Atribuições</h3>
                 <Table head={['Estafeta', 'Estado', 'Motivo']} rows={o.assignments.map((a: any) => [a.courier, lbl(a.status), a.reason ?? ''])} />

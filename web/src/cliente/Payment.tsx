@@ -4,7 +4,7 @@ import { newIdempotencyKey } from '../shared/api';
 import { useConfig } from '../shared/config';
 import { mt } from '../shared/format';
 import { useSession } from '../shared/session';
-import { Button, Card, ErrorBox, Field, Loaded, Notice, Page, useAction, useLoad } from '../shared/ui';
+import { Button, Card, ErrorBox, Field, KV, Loaded, Notice, Page, useAction, useLoad } from '../shared/ui';
 
 interface Intent {
   id: string;
@@ -14,6 +14,8 @@ interface Intent {
   failure_reason?: string | null;
   order_id?: string | null;
   subscription_id?: string | null;
+  manual_txn_ref?: string | null;
+  manual?: { provider_label: string; number: string; account_name: string; amount_cents: number; reference: string } | null;
 }
 
 /** Pagamento de uma encomenda (/pagar/:id) ou subscrição (/pagar-plano/:id). Nunca guarda o PIN. */
@@ -28,7 +30,14 @@ export function Payment({ kind }: { kind: 'order' | 'subscription' }) {
   const [msisdn, setMsisdn] = useState(me?.phone?.replace('+258', '') ?? '');
   const [intent, setIntent] = useState<Intent | null>(null);
   const [idem, setIdem] = useState(newIdempotencyKey);
+  const [txn, setTxn] = useState('');
   const a = useAction();
+
+  const sendRef = () =>
+    a.run(async () => {
+      await api.post(`/payments/intents/${intent!.id}/manual-reference`, { txn_ref: txn.trim() });
+      setIntent(await api.get<Intent>(`/payments/intents/${intent!.id}`));
+    });
 
   // Acompanha o estado do pagamento até à confirmação do provedor.
   useEffect(() => {
@@ -81,13 +90,13 @@ export function Payment({ kind }: { kind: 'order' | 'subscription' }) {
             )}
             {!intent && (
               <Card className="stack">
-                {options.length === 0 && <Notice tone="warn">Nenhum método de pagamento está activo agora. M-Pesa e e-Mola ficam disponíveis após a integração oficial.</Notice>}
+                {options.length === 0 && <Notice tone="warn">Nenhum método de pagamento está activo agora. Contacte o apoio LevaGo.</Notice>}
                 {options.map(([k, l]) => (
                   <label key={k} className="radio">
                     <input type="radio" name="p" checked={provider === k} onChange={() => setProvider(k)} /> {l}
                   </label>
                 ))}
-                <Field label="Número da carteira móvel" hint="Vai receber o pedido de confirmação no telemóvel. Nunca escreva o PIN aqui.">
+                <Field label="Número de onde vai pagar" hint="O número da sua carteira móvel. Nunca escreva o PIN aqui.">
                   <input inputMode="tel" value={msisdn} onChange={(e) => setMsisdn(e.target.value)} />
                 </Field>
                 <ErrorBox error={a.error} />
@@ -96,7 +105,36 @@ export function Payment({ kind }: { kind: 'order' | 'subscription' }) {
                 </Button>
               </Card>
             )}
-            {intent?.status === 'pending' && (
+            {intent?.status === 'pending' && intent.manual && (
+              <Card className="stack">
+                <h3>Transfira pelo {intent.manual.provider_label}</h3>
+                <KV
+                  items={[
+                    ['Número', <strong key="n">{intent.manual.number}</strong>],
+                    ['Nome da conta', intent.manual.account_name || 'LevaGo'],
+                    ['Valor', <strong key="v">{mt(intent.manual.amount_cents)}</strong>],
+                    ['Referência', intent.manual.reference],
+                  ]}
+                />
+                {!intent.manual_txn_ref ? (
+                  <>
+                    <p>Depois de transferir, recebe um SMS com o código da transacção. Escreva esse código aqui.</p>
+                    <Field label="Código da transacção" hint="Exemplo: 8KD2XQ71PL. Não escreva o PIN.">
+                      <input value={txn} onChange={(e) => setTxn(e.target.value.replace(/\s/g, ''))} maxLength={24} autoCapitalize="characters" />
+                    </Field>
+                    <ErrorBox error={a.error} />
+                    <Button busy={a.busy} disabled={!/^[A-Za-z0-9.]{6,24}$/.test(txn.trim())} onClick={sendRef}>
+                      Enviar código
+                    </Button>
+                  </>
+                ) : (
+                  <Notice tone="info">
+                    Recebemos o código {intent.manual_txn_ref}. A equipa LevaGo confirma o pagamento no extracto e o pedido avança. Esta página actualiza sozinha.
+                  </Notice>
+                )}
+              </Card>
+            )}
+            {intent?.status === 'pending' && !intent.manual && (
               <Card className="stack center">
                 <div className="spinner" />
                 <h3>A aguardar confirmação</h3>

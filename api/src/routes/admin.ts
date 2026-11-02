@@ -3,6 +3,8 @@ import { Hono } from 'hono';
 import { roadRoute } from '../lib/adapters.js';
 import { all, bad, conflict, files, forbidden, getSetting, need, normalizePhone, notFound, nowIso, one, parseJson, run, uuid, v, type AuthUser, type Ctx, type Env, type Vars } from '../lib/core.js';
 import { checkRoadDistance, pointInPolygon, priceFor, STATUS_LABELS, vehicleCanCarry, type LonLat, type OrderStatus, type PricingRule } from '../lib/domain.js';
+import { custodyStmt } from '../lib/custody.js';
+import { applyPaymentEvent } from './payments.js';
 import { actorRole, auditStmt, notifyStmt, requireRole, transition, type OrderRow } from '../lib/services.js';
 
 const r = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -317,7 +319,8 @@ r.get('/orders/:id', async (c) => {
     events: await all(c.env.DB, 'SELECT e.from_status, e.to_status, e.actor_role, e.note, e.created_at, u.name AS actor FROM order_events e LEFT JOIN users u ON u.id = e.actor_id WHERE order_id = ? ORDER BY e.created_at', c.req.param('id')),
     assignments: await all(c.env.DB, 'SELECT a.*, u.name AS courier FROM assignments a JOIN users u ON u.id = a.courier_id WHERE order_id = ? ORDER BY a.created_at', c.req.param('id')),
     proofs: await all(c.env.DB, 'SELECT kind, method, checklist, CASE WHEN photo_r2_key IS NOT NULL THEN 1 ELSE 0 END AS has_photo, created_at FROM delivery_proofs WHERE order_id = ?', c.req.param('id')),
-    incidents: await all(c.env.DB, 'SELECT * FROM incident_reports WHERE order_id = ? ORDER BY created_at', c.req.param('id')),
+    incidents: await all(c.env.DB, 'SELECT id, protocol, category AS kind, description, status, priority, reporter_role, created_at FROM incidents WHERE order_id = ? ORDER BY created_at', c.req.param('id')),
+    custody: await all(c.env.DB, 'SELECT event_type, from_party, to_party, method, occurred_at FROM custody_events WHERE order_id = ? ORDER BY occurred_at', c.req.param('id')),
     payments: await all(c.env.DB, 'SELECT id, provider, status, amount_cents, provider_ref, created_at FROM payment_intents WHERE order_id = ? ORDER BY created_at', c.req.param('id')),
     location: await one(c.env.DB, 'SELECT lat, lon, updated_at FROM location_updates WHERE order_id = ?', c.req.param('id')),
   });
@@ -373,7 +376,7 @@ r.post('/orders/:id/assign', async (c) => {
 
 r.post('/orders/:id/status', async (c) => {
   const u = admin(c);
-  const b = need<{ to: OrderStatus; reason: string }>(await c.req.json(), { to: v.oneOf('CANCELADO', 'EM_TRANSPORTE', 'DEVOLUCAO_PENDENTE', 'DEVOLVIDO', 'FALHA_ENTREGA', 'PENDENTE_ATRIBUICAO'), ...reasonRule });
+  const b = need<{ to: OrderStatus; reason: string }>(await c.req.json(), { to: v.oneOf('CANCELADO', 'EM_TRANSPORTE', 'DEVOLUCAO_PENDENTE', 'DEVOLVIDO', 'FALHA_ENTREGA', 'PENDENTE_ATRIBUICAO', 'ACEITE'), ...reasonRule });
   const o = await one<OrderRow>(c.env.DB, 'SELECT * FROM orders WHERE id = ?', c.req.param('id'));
   if (!o) throw notFound();
   const extra: Stmt[] = [auditStmt(c.env.DB, who(u), `order.status.${b.to}`, 'order', o.id, b.reason, { status: o.status }, { status: b.to })];
@@ -392,19 +395,42 @@ r.post('/orders/:id/status', async (c) => {
     set.assigned_courier_id = null;
     extra.push(c.env.DB.prepare("UPDATE assignments SET status = 'revoked', reason = ?, responded_at = ? WHERE order_id = ? AND status IN ('offered','accepted')").bind(b.reason, nowIso(), o.id));
   }
+  // Decisão sobre recolha suspensa: fica na cadeia de custódia como excepção autorizada, com motivo.
+  if (o.status === 'RECOLHA_BLOQUEADA') {
+    extra.push(custodyStmt(c.env.DB, { orderId: o.id, type: 'excepcao_autorizada', from: 'remetente', to: 'remetente', actorId: u.id, method: 'autorizacao_admin', metadata: { decisao: b.to, motivo: b.reason } }));
+  }
   const ok = await transition(c.env.DB, o, b.to, { id: u.id, role: 'admin' }, { note: b.reason, set, extra });
   if (!ok) throw conflict('estado_mudou', 'O pedido mudou entretanto. Actualize.');
   return c.json({ ok: true });
 });
 
-r.post('/incidents/:id/resolve', async (c) => {
+/**
+ * Pagamento manual (M-Pesa / e-Mola): o super-administrador confirma depois de ver o valor no extracto da conta.
+ * Nunca confirmar só com captura de ecrã ou SMS reencaminhado. Fica na auditoria com o motivo.
+ */
+r.post('/payments/:id/manual-review', async (c) => {
   const u = admin(c);
-  const b = need<{ reason: string }>(await c.req.json(), reasonRule);
+  if (!u.roles.includes('super_admin')) throw forbidden('Só o super-administrador confirma pagamentos.');
+  const b = need<{ decision: 'confirmar' | 'rejeitar'; reason: string }>(await c.req.json(), { decision: v.oneOf('confirmar', 'rejeitar'), ...reasonRule });
+  const pi = await one<{ id: string; provider: string; status: string; amount_cents: number; manual_txn_ref: string | null }>(
+    c.env.DB, 'SELECT id, provider, status, amount_cents, manual_txn_ref FROM payment_intents WHERE id = ?', c.req.param('id'),
+  );
+  if (!pi) throw notFound();
+  if (pi.provider === 'sandbox') throw bad('metodo', 'Este pagamento não é manual.');
+  if (pi.status !== 'pending') throw conflict('ja_revisto', 'Este pagamento já foi analisado.');
+  if (b.decision === 'confirmar' && !pi.manual_txn_ref) throw bad('sem_codigo', 'O cliente ainda não indicou o código da transacção.');
+  const now = nowIso();
   await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE incident_reports SET status = 'resolved' WHERE id = ?").bind(c.req.param('id')),
-    auditStmt(c.env.DB, who(u), 'incident.resolve', 'incident', c.req.param('id'), b.reason),
+    c.env.DB.prepare("UPDATE payment_intents SET reviewed_by = ?, reviewed_at = ?, review_note = ? WHERE id = ? AND status = 'pending'").bind(u.id, now, b.reason, pi.id),
+    auditStmt(c.env.DB, who(u), `payment.manual.${b.decision}`, 'payment_intent', pi.id, b.reason, { status: 'pending' }, { txn: pi.manual_txn_ref, amount_cents: pi.amount_cents }),
   ]);
-  return c.json({ ok: true });
+  // Mesmo caminho que um webhook: idempotente e com as mesmas regras (pedido avança, plano activa, reembolso se cancelado).
+  const res = await applyPaymentEvent(
+    c.env.DB,
+    { event_id: `manual-${pi.id}`, intent_id: pi.id, status: b.decision === 'confirmar' ? 'succeeded' : 'failed', amount_cents: pi.amount_cents, reason: b.decision === 'rejeitar' ? b.reason : undefined },
+    JSON.stringify({ manual: true, by: u.id, txn: pi.manual_txn_ref }),
+  );
+  return c.json({ ok: true, ...res });
 });
 
 // ------------------------------------------------------------------ 06 Subscrições
@@ -488,9 +514,10 @@ r.get('/payments', async (c) => {
   const status = c.req.query('status');
   const intents = await all(
     c.env.DB,
-    `SELECT p.id, p.provider, p.status, p.amount_cents, p.provider_ref, p.failure_reason, p.created_at, p.updated_at, u.name AS customer, o.code AS order_code, p.subscription_id
-       FROM payment_intents p JOIN users u ON u.id = p.customer_id LEFT JOIN orders o ON o.id = p.order_id
-      ${status ? 'WHERE p.status = ?' : ''} ORDER BY p.created_at DESC LIMIT 200`,
+    `SELECT p.id, p.provider, p.status, p.amount_cents, p.provider_ref, p.failure_reason, p.created_at, p.updated_at, u.name AS customer, o.code AS order_code, p.subscription_id,
+            p.msisdn, p.manual_txn_ref, p.manual_submitted_at, p.reviewed_at, p.review_note, rv.name AS reviewed_by_name
+       FROM payment_intents p JOIN users u ON u.id = p.customer_id LEFT JOIN orders o ON o.id = p.order_id LEFT JOIN users rv ON rv.id = p.reviewed_by
+      ${status ? 'WHERE p.status = ?' : ''} ORDER BY (p.status = 'pending' AND p.manual_txn_ref IS NOT NULL) DESC, p.created_at DESC LIMIT 200`,
     ...(status ? [status] : []),
   );
   const refunds = await all(
