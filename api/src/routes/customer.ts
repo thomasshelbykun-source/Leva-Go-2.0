@@ -8,7 +8,7 @@ import {
 import { hashPassword, orderCode, randomDigits, sha256, verifyPassword } from '../lib/crypto.js';
 import {
   checkRoadDistance, checkWeight, coverageFor, customerCanCancel, fitsBusinessHours, priceFor, slotsForDay, STATUS_LABELS,
-  type OrderStatus, type PricingRule,
+  type OrderStatus, type PriceBreakdown, type PricingRule,
 } from '../lib/domain.js';
 import { guardedBatch, loadHours, loadZones, notifyStmt, rateLimit, requireRole, transition, type OrderRow } from '../lib/services.js';
 
@@ -62,7 +62,19 @@ r.get('/home', async (c) => {
   );
   const unread = await one<{ n: number }>(c.env.DB, 'SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL', u.id);
   const sub = await activeSubscription(c.env.DB, u.id);
-  return c.json({ name: u.name, active_order: active, unread_notifications: unread?.n ?? 0, subscription: sub });
+  const credits = await one<{ n: number }>(c.env.DB, "SELECT COUNT(*) AS n FROM express_credits WHERE customer_id = ? AND status = 'available'", u.id);
+  // Cliente novo ou sem saldo: a página inicial mostra os planos publicados (editados pelo Admin).
+  const needsPlan = !sub || sub.remaining <= 0;
+  const plans = needsPlan
+    ? (await all(c.env.DB, "SELECT id, name, description, price_cents, period_days, deliveries_included, service_types FROM subscription_plans WHERE status = 'published' ORDER BY price_cents"))
+        .map((p) => ({ ...p, service_types: parseJson(p.service_types, []) }))
+    : [];
+  const cfg = await getSetting(c.env.DB, 'plans', { express_supplement_cents: 15000, recommended_plan_id: 'plano-plus' });
+  return c.json({
+    name: u.name, active_order: active, unread_notifications: unread?.n ?? 0, subscription: sub,
+    needs_plan: needsPlan, plans, express_credits: credits?.n ?? 0,
+    express_supplement_cents: cfg.express_supplement_cents, recommended_plan_id: cfg.recommended_plan_id ?? 'plano-plus',
+  });
 });
 
 // ------------------------------------------------------------------ Agendamento
@@ -102,7 +114,7 @@ r.post('/quotes', async (c) => {
     scheduled_at: (x) => (x === undefined || x === null || (typeof x === 'string' && !Number.isNaN(Date.parse(x))) ? null : 'Data inválida.'),
   });
   await rateLimit(c.env.DB, `quote:${u.id}`, 30, 10);
-  const limits = await getSetting(c.env.DB, 'limits', { max_weight_kg: 15, max_road_distance_m: 15000, quote_ttl_minutes: 10 });
+  const limits = await getSetting(c.env.DB, 'limits', { max_weight_kg: 15, max_road_distance_m: 60000, quote_ttl_minutes: 10 });
   const types = await getSetting<Record<string, { enabled: boolean }>>(c.env.DB, 'service_types', {});
   if (types[b.service_type] && !types[b.service_type]!.enabled) throw bad('modalidade_indisponivel', 'Esta modalidade não está disponível agora.');
 
@@ -130,12 +142,22 @@ r.post('/quotes', async (c) => {
   if (!rule) throw new ApiError(503, 'sem_tarifa', 'Não existe tarifa para esta modalidade.');
   const breakdown = priceFor(rule, route.distance_m, b.weight_kg);
 
-  // Subscrição activa com benefício disponível cobre a entrega.
+  // Plano activo com saldo: desconta 1 encomenda. Normal fica sem custo; Expressa paga só o suplemento fixo,
+  // salvo se o cliente tiver um crédito expresso disponível.
   const sub = await activeSubscription(c.env.DB, u.id);
   const covered = !!sub && sub.remaining > 0 && sub.service_types.includes(b.service_type) && b.weight_kg <= sub.max_weight_kg;
+  let creditAvailable = false;
   if (covered) {
     breakdown.subscription_discount_cents = breakdown.total_cents;
+    breakdown.plan_unit = true;
     breakdown.total_cents = 0;
+    if (b.service_type === 'expressa') {
+      creditAvailable = !!(await one(c.env.DB, "SELECT id FROM express_credits WHERE customer_id = ? AND status = 'available' LIMIT 1", u.id));
+      const plans = await getSetting(c.env.DB, 'plans', { express_supplement_cents: 15000 });
+      breakdown.express_supplement_cents = plans.express_supplement_cents;
+      if (creditAvailable) breakdown.express_credit = true;
+      else breakdown.total_cents = plans.express_supplement_cents;
+    }
   }
 
   const id = uuid();
@@ -160,6 +182,8 @@ r.post('/quotes', async (c) => {
     currency: 'MZN',
     pricing_version: pv.version,
     covered_by_subscription: covered,
+    plan_remaining: sub ? sub.remaining : 0,
+    express_credit_used: creditAvailable && covered,
     service_available_now: hoursCheck.ok,
     hours_message: hoursCheck.ok ? null : hoursCheck.reason,
     expires_at: expires,
@@ -182,6 +206,8 @@ r.post('/orders', async (c) => {
   const b = need<{
     quote_id: string; recipient_name: string; recipient_phone: string; pickup_contact?: string; category: string; description: string; notes?: string;
     payment_method: 'mpesa' | 'emola' | 'na_entrega' | 'sandbox' | 'subscricao';
+    order_kind?: 'envio' | 'recolha';
+    pickup_details?: { establishment_type: string; establishment_name: string; order_ref?: string; paid_confirmed: boolean };
   }>(await c.req.json(), {
     quote_id: v.str(10, 64),
     recipient_name: v.str(2, 80),
@@ -191,7 +217,19 @@ r.post('/orders', async (c) => {
     description: v.str(3, 300),
     notes: v.optStr(500),
     payment_method: v.oneOf('mpesa', 'emola', 'na_entrega', 'sandbox', 'subscricao'),
+    order_kind: (x) => (x === undefined || x === 'envio' || x === 'recolha' ? null : 'Tipo de pedido inválido.'),
+    pickup_details: (x) => {
+      if (x === undefined || x === null) return null;
+      const d = x as Record<string, unknown>;
+      if (!['restaurante', 'farmacia', 'loja', 'outro'].includes(String(d.establishment_type))) return 'Escolha o tipo de estabelecimento.';
+      if (typeof d.establishment_name !== 'string' || d.establishment_name.trim().length < 2 || d.establishment_name.length > 80) return 'Indique o nome do estabelecimento.';
+      if (d.order_ref !== undefined && (typeof d.order_ref !== 'string' || d.order_ref.length > 40)) return 'Número do pedido inválido.';
+      if (d.paid_confirmed !== true) return 'Confirme que o artigo já está pago ou reservado.';
+      return null;
+    },
   });
+  const kind = b.order_kind ?? 'envio';
+  if (kind === 'recolha' && !b.pickup_details) throw bad('recolha', 'Indique os dados do estabelecimento.');
 
   // Repetição do mesmo pedido devolve o pedido já criado (sem duplicar cobrança).
   const again = await one<{ id: string }>(c.env.DB, 'SELECT id FROM orders WHERE customer_id = ? AND idempotency_key = ?', u.id, idem);
@@ -205,7 +243,7 @@ r.post('/orders', async (c) => {
   if (q.expires_at < nowIso()) throw bad('cotacao_expirada', 'A cotação expirou. Volte a pedir o preço.');
 
   // Revalidações no servidor (nunca confiar nos valores do cliente).
-  const limits = await getSetting(c.env.DB, 'limits', { max_weight_kg: 15, max_road_distance_m: 15000, quote_ttl_minutes: 10 });
+  const limits = await getSetting(c.env.DB, 'limits', { max_weight_kg: 15, max_road_distance_m: 60000, quote_ttl_minutes: 10 });
   const dErr = checkRoadDistance(q.road_distance_m, limits.max_road_distance_m) ?? checkWeight(q.weight_kg, limits.max_weight_kg);
   if (dErr) throw bad('limites', dErr);
   const start = q.scheduled_at ? new Date(q.scheduled_at) : new Date();
@@ -223,15 +261,28 @@ r.post('/orders', async (c) => {
   const extra: Stmt[] = [];
   const orderId = uuid();
 
-  if (q.total_cents === 0) {
+  const qb = parseJson<PriceBreakdown>(q.breakdown, {} as PriceBreakdown);
+  let creditId: string | null = null;
+  if (qb.plan_unit) {
+    // Desconta 1 encomenda do plano (mesmo na Expressa, que paga à parte só o suplemento).
     const sub = await activeSubscription(c.env.DB, u.id);
-    if (!sub || sub.remaining <= 0) throw bad('sem_beneficio', 'A subscrição já não tem entregas disponíveis. Peça nova cotação.');
-    status = 'PENDENTE_ATRIBUICAO';
-    paymentStatus = 'not_required';
+    if (!sub || sub.remaining <= 0) throw bad('sem_beneficio', 'O teu plano já não tem encomendas disponíveis. Peça nova cotação.');
     extra.push(
       c.env.DB.prepare('UPDATE subscription_entitlements SET deliveries_used = deliveries_used + 1 WHERE id = ? AND deliveries_used < deliveries_total').bind(sub.entitlement_id),
       c.env.DB.prepare('INSERT INTO entitlement_usages (order_id, entitlement_id) VALUES (?,?)').bind(orderId, sub.entitlement_id),
     );
+    if (qb.express_credit) {
+      const cr = await one<{ id: string }>(c.env.DB, "SELECT id FROM express_credits WHERE customer_id = ? AND status = 'available' ORDER BY created_at LIMIT 1", u.id);
+      if (!cr) throw bad('sem_credito', 'O crédito expresso já foi usado. Peça nova cotação.');
+      creditId = cr.id;
+      extra.push(c.env.DB.prepare("UPDATE express_credits SET status = 'used', used_order_id = ?, updated_at = ? WHERE id = ? AND status = 'available'").bind(orderId, nowIso(), cr.id));
+    }
+  }
+
+  if (q.total_cents === 0) {
+    if (!qb.plan_unit) throw bad('sem_beneficio', 'Peça nova cotação.');
+    status = 'PENDENTE_ATRIBUICAO';
+    paymentStatus = 'not_required';
   } else if (b.payment_method === 'na_entrega') {
     if (!pay.pay_on_delivery_enabled || q.total_cents > pay.pay_on_delivery_max_cents) {
       throw bad('na_entrega_indisponivel', 'O pagamento na entrega não está disponível para este pedido.');
@@ -250,15 +301,17 @@ r.post('/orders', async (c) => {
   const insert = c.env.DB.prepare(
     `INSERT INTO orders (id, code, customer_id, quote_id, idempotency_key, pickup_snapshot, dropoff_snapshot, recipient_name, recipient_phone,
        category, description, notes, weight_kg, service_type, road_distance_m, price_cents, pricing_snapshot, payment_method, payment_status, status,
-       scheduled_at, delivery_code_hash)
-     SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM quotes WHERE id = ? AND used_at IS NOT NULL)`,
+       scheduled_at, delivery_code_hash, order_kind, pickup_details, express_supplement_cents, used_express_credit_id)
+     SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM quotes WHERE id = ? AND used_at IS NOT NULL)`,
   ).bind(
     orderId, code, u.id, q.id, idem,
     JSON.stringify({ text: q.pickup_text, lat: q.pickup_lat, lon: q.pickup_lon, contact: b.pickup_contact ?? null }),
     JSON.stringify({ text: q.dropoff_text, lat: q.dropoff_lat, lon: q.dropoff_lon }),
     b.recipient_name, normalizePhone(b.recipient_phone), b.category, b.description, b.notes ?? null, q.weight_kg, q.service_type,
     q.road_distance_m, q.total_cents, q.breakdown, q.total_cents === 0 ? 'subscricao' : b.payment_method,
-    paymentStatus, status, q.scheduled_at, await sha256(`${orderId}:${deliveryCode}`), q.id,
+    paymentStatus, status, q.scheduled_at, await sha256(`${orderId}:${deliveryCode}`),
+    kind, b.pickup_details ? JSON.stringify(b.pickup_details) : null, qb.plan_unit && !qb.express_credit ? (qb.express_supplement_cents ?? 0) : 0, creditId,
+    q.id,
   );
   const ok = await guardedBatch(c.env.DB, insert, [
     c.env.DB.prepare('UPDATE quotes SET used_at = ? WHERE id = ?').bind(nowIso(), q.id),
@@ -308,8 +361,16 @@ r.post('/orders/:id/cancel', async (c) => {
     c.env.DB.prepare('UPDATE subscription_entitlements SET deliveries_used = deliveries_used - 1 WHERE id = (SELECT entitlement_id FROM entitlement_usages WHERE order_id = ?) AND deliveries_used > 0').bind(o.id),
     c.env.DB.prepare('DELETE FROM entitlement_usages WHERE order_id = ?').bind(o.id),
   );
-  // Pagamento confirmado gera pedido de reembolso para o Admin aprovar (política pendente 14.2).
-  if (o.payment_status === 'succeeded') {
+  const ox = o as OrderRow & { used_express_credit_id?: string | null; express_supplement_cents?: number };
+  // Expressa paga com crédito: o crédito volta a ficar disponível.
+  if (ox.used_express_credit_id) {
+    extra.push(c.env.DB.prepare("UPDATE express_credits SET status = 'available', used_order_id = NULL, updated_at = ? WHERE id = ? AND used_order_id = ?").bind(nowIso(), ox.used_express_credit_id, o.id));
+  }
+  if (o.payment_status === 'succeeded' && (ox.express_supplement_cents ?? 0) > 0) {
+    // Suplemento Expressa pago: não há devolução em dinheiro, o cliente recebe 1 crédito expresso (sem duplicados).
+    extra.push(c.env.DB.prepare('INSERT INTO express_credits (id, customer_id, origin_order_id) VALUES (?,?,?) ON CONFLICT (origin_order_id) DO NOTHING').bind(uuid(), u.id, o.id));
+  } else if (o.payment_status === 'succeeded') {
+    // Pagamento confirmado gera pedido de reembolso para o Admin aprovar (política pendente 14.2).
     extra.push(c.env.DB.prepare(
       "INSERT INTO refunds (id, intent_id, amount_cents, reason, requested_by) SELECT ?, id, amount_cents, ?, ? FROM payment_intents WHERE order_id = ? AND status = 'succeeded' LIMIT 1",
     ).bind(uuid(), `Cancelamento pelo cliente: ${b.reason}`, u.id, o.id));
@@ -358,7 +419,7 @@ async function orderDetail(db: Db, id: string, customerId: string): Promise<Reco
     db,
     `SELECT id, code, status, customer_id, quote_id, pickup_snapshot, dropoff_snapshot, recipient_name, recipient_phone, category, description, notes,
             weight_kg, service_type, road_distance_m, price_cents, pricing_snapshot, payment_method, payment_status, scheduled_at, assigned_courier_id,
-            cancel_reason, created_at, updated_at
+            cancel_reason, created_at, updated_at, order_kind, pickup_details, express_supplement_cents, used_express_credit_id
        FROM orders WHERE id = ? AND customer_id = ?`,
     id,
     customerId,
@@ -389,6 +450,7 @@ async function orderDetail(db: Db, id: string, customerId: string): Promise<Reco
     pickup: parseJson<{ text: string; lat: number; lon: number }>(o.pickup_snapshot, null as never),
     dropoff: parseJson<{ text: string; lat: number; lon: number }>(o.dropoff_snapshot, null as never),
     pricing: parseJson(o.pricing_snapshot, {}),
+    pickup_details: parseJson(o.pickup_details, null),
     route_geometry: parseJson(quote?.route_geometry, null),
     estimated_duration_s: quote?.estimated_duration_s ?? null,
     can_cancel: customerCanCancel(o.status),
@@ -485,7 +547,8 @@ r.post('/subscriptions', async (c) => {
   const b = need<{ plan_id: string }>(await c.req.json(), { plan_id: v.str(10, 64) });
   const plan = await one<Record<string, unknown>>(c.env.DB, "SELECT * FROM subscription_plans WHERE id = ? AND status = 'published'", b.plan_id);
   if (!plan) throw notFound('Plano não disponível.');
-  if (await activeSubscription(c.env.DB, u.id)) throw conflict('ja_subscrito', 'Já tem uma subscrição activa.');
+  const current = await activeSubscription(c.env.DB, u.id);
+  if (current && current.remaining > 0) throw conflict('ja_subscrito', `Ainda tens ${current.remaining} encomendas no plano ${current.plan_name}.`);
   await run(c.env.DB, "UPDATE subscriptions SET status = 'cancelled', cancelled_at = ? WHERE customer_id = ? AND status = 'pending_payment'", nowIso(), u.id);
   const id = uuid();
   const snapshot = {

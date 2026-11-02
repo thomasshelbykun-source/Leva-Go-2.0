@@ -63,6 +63,8 @@ export async function applyPaymentEvent(db: Db, ev: ProviderEvent, raw: string) 
     const end = new Date(Date.now() + plan.period_days * 86_400_000).toISOString();
     await db.batch([
       setPaid,
+      // Plano novo substitui o anterior (ex.: plano sem encomendas disponíveis).
+      db.prepare("UPDATE subscriptions SET status = 'expired' WHERE customer_id = ? AND status = 'active' AND id <> ?").bind(pi.customer_id, pi.subscription_id),
       db.prepare("UPDATE subscriptions SET status = 'active', current_period_start = ?, current_period_end = ? WHERE id = ? AND status = 'pending_payment'").bind(now, end, pi.subscription_id),
       db.prepare('INSERT INTO subscription_entitlements (id, subscription_id, period_start, period_end, deliveries_total) VALUES (?,?,?,?,?) ON CONFLICT DO NOTHING').bind(uuid(), pi.subscription_id, now, end, plan.deliveries_included),
       db.prepare("INSERT INTO invoices (id, customer_id, subscription_id, amount_cents, status) VALUES (?,?,?,?, 'paid')").bind(uuid(), pi.customer_id, pi.subscription_id, pi.amount_cents),

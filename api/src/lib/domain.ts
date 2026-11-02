@@ -131,6 +131,12 @@ export interface PriceBreakdown {
   weight_cents: number;
   minimum_adjust_cents: number;
   subscription_discount_cents: number;
+  /** Suplemento fixo da Expressa quando o pedido usa uma unidade do plano. */
+  express_supplement_cents?: number;
+  /** O pedido desconta 1 encomenda do plano. */
+  plan_unit?: boolean;
+  /** O suplemento Expressa é pago com um crédito expresso. */
+  express_credit?: boolean;
   total_cents: number;
 }
 
@@ -174,8 +180,8 @@ export const ACTIVE_COURIER_STATUSES: OrderStatus[] = ['ACEITE', 'RECOLHIDO', 'E
 export const TRANSITIONS: Record<OrderStatus, Partial<Record<OrderStatus, Actor[]>>> = {
   AGUARDA_PAGAMENTO: { PENDENTE_ATRIBUICAO: ['system'], CANCELADO: ['customer', 'admin', 'system'] },
   PENDENTE_ATRIBUICAO: { ATRIBUIDO: ['admin'], ACEITE: ['courier'], CANCELADO: ['customer', 'admin'] },
-  ATRIBUIDO: { ACEITE: ['courier'], PENDENTE_ATRIBUICAO: ['courier', 'admin'], CANCELADO: ['admin'] },
-  ACEITE: { RECOLHIDO: ['courier'], PENDENTE_ATRIBUICAO: ['admin'], CANCELADO: ['admin'] },
+  ATRIBUIDO: { ACEITE: ['courier'], PENDENTE_ATRIBUICAO: ['courier', 'admin'], CANCELADO: ['customer', 'admin'] },
+  ACEITE: { RECOLHIDO: ['courier'], PENDENTE_ATRIBUICAO: ['admin'], CANCELADO: ['customer', 'admin'] },
   RECOLHIDO: { EM_TRANSPORTE: ['courier'], FALHA_ENTREGA: ['courier', 'admin'] },
   EM_TRANSPORTE: { ENTREGUE: ['courier'], FALHA_ENTREGA: ['courier', 'admin'] },
   FALHA_ENTREGA: { EM_TRANSPORTE: ['admin'], DEVOLUCAO_PENDENTE: ['admin'] },
@@ -204,8 +210,9 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
 };
 
 /** O cliente só pode cancelar antes de um estafeta aceitar. */
+/** O cliente pode cancelar até à recolha, mesmo que um estafeta já tenha aceite. */
 export function customerCanCancel(status: OrderStatus) {
-  return status === 'AGUARDA_PAGAMENTO' || status === 'PENDENTE_ATRIBUICAO';
+  return ['AGUARDA_PAGAMENTO', 'PENDENTE_ATRIBUICAO', 'ATRIBUIDO', 'ACEITE'].includes(status);
 }
 
 // ------------------------------------------------------------------ Estafetas

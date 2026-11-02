@@ -753,7 +753,7 @@ r.get('/settings', async (c) => {
   return c.json({ settings: settings.map((s) => ({ ...s, value: parseJson(s.value, {}) })), hours, admins: admins.map((a) => ({ ...a, phone: maskPhone(String(a.phone)) })) });
 });
 
-const EDITABLE_SETTINGS = ['company', 'limits', 'payments', 'courier_pay', 'scheduling', 'service_types', 'app'];
+const EDITABLE_SETTINGS = ['company', 'limits', 'payments', 'courier_pay', 'scheduling', 'service_types', 'app', 'plans'];
 
 r.put('/settings/:key', async (c) => {
   const u = admin(c);
@@ -762,8 +762,8 @@ r.put('/settings/:key', async (c) => {
   const b = need<{ value: Record<string, unknown>; reason: string }>(await c.req.json(), { value: (x) => (x && typeof x === 'object' && !Array.isArray(x) ? null : 'Valor inválido.'), ...reasonRule });
   if (key === 'limits') {
     const l = b.value as { max_weight_kg?: number; max_road_distance_m?: number };
-    // Limites aprovados (15 kg, 15 km) só podem baixar, nunca subir pelo painel.
-    if ((l.max_weight_kg ?? 15) > 15 || (l.max_road_distance_m ?? 15000) > 15000) throw bad('limites', 'Os limites aprovados são 15 kg e 15 km por estrada.');
+    // Peso aprovado: 15 kg no máximo. A distância segue a cobertura de Quelimane (teto técnico de 60 km).
+    if ((l.max_weight_kg ?? 15) > 15 || (l.max_road_distance_m ?? 60000) > 60000) throw bad('limites', 'O peso máximo é 15 kg e a distância máxima é 60 km por estrada.');
   }
   if (['payments', 'limits'].includes(key) && !u.roles.includes('super_admin')) throw forbidden('Só o super-administrador altera pagamentos e limites.');
   const before = await one<{ value: string }>(c.env.DB, 'SELECT value FROM system_settings WHERE key = ?', key);
