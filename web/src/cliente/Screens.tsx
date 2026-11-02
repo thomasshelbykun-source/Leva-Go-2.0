@@ -1,3 +1,4 @@
+import { IN_APP } from '../shared/inapp';
 import { HeroSheet } from '../shared/Hero';
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -31,7 +32,7 @@ export function Welcome() {
         Entrar
       </ButtonLink>
       <p className="small center">
-        <Icon name="pin" size={16} /> Quelimane, Moçambique · <Link to="/">Mudar de área</Link>
+        <Icon name="pin" size={16} /> Quelimane, Moçambique · <Link to="/" reloadDocument={IN_APP}>Mudar de área</Link>
       </p>
     </HeroSheet>
   );

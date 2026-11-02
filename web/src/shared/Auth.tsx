@@ -1,3 +1,4 @@
+import { IN_APP } from './inapp';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { setToken } from './api';
@@ -33,7 +34,7 @@ function AreaSwitch() {
   const s = useSession();
   return (
     <p className="small center area-switch">
-      Está na área <strong>{AREA[s.app]}</strong> · <Link to="/">Mudar de área</Link>
+      Está na área <strong>{AREA[s.app]}</strong> · <Link to="/" reloadDocument={IN_APP}>Mudar de área</Link>
     </p>
   );
 }

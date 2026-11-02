@@ -1,3 +1,4 @@
+import { IN_APP } from '../shared/inapp';
 import { HeroSheet } from '../shared/Hero';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -32,7 +33,7 @@ export function CourierWelcome() {
         Quero ser estafeta
       </ButtonLink>
       <p className="small center">
-        <Link to="/">Mudar de área</Link>
+        <Link to="/" reloadDocument={IN_APP}>Mudar de área</Link>
       </p>
     </HeroSheet>
   );

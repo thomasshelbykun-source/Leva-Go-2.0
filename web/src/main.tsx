@@ -92,7 +92,7 @@ function Landing() {
         <p className="hs-sub">Entregas rápidas e seguras em Quelimane, de bicicleta ou motorizada.</p>
       </div>
       <div className="choice-list">
-        <Link to="/cliente" className="choice">
+        <Link to="/cliente" reloadDocument={IN_APP} className="choice">
           <span className="choice-icon">
             <Icon name="box" size={26} />
           </span>
@@ -102,7 +102,7 @@ function Landing() {
           </span>
           <span className="choice-go" aria-hidden="true">›</span>
         </Link>
-        <Link to="/estafeta" className="choice choice-alt">
+        <Link to="/estafeta" reloadDocument={IN_APP} className="choice choice-alt">
           <span className="choice-icon">
             <Icon name="scooter" size={26} />
           </span>
@@ -146,4 +146,19 @@ if ('serviceWorker' in navigator && IN_APP) {
   if ('caches' in window) caches.keys().then((ks) => ks.forEach((k) => caches.delete(k))).catch(() => null);
 } else if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => null));
+}
+
+// Dentro da app Android não há consola: um erro inesperado aparece no ecrã para podermos ver a causa.
+if (IN_APP) {
+  const show = (msg: string) => {
+    if (document.getElementById('app-err')) return;
+    const d = document.createElement('div');
+    d.id = 'app-err';
+    d.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:99999;background:#fff;color:#0f1b2d;border:2px solid #f26a12;border-radius:12px;padding:10px;font:13px/1.4 sans-serif;box-shadow:0 4px 20px rgba(0,0,0,.3)';
+    d.textContent = 'Erro na app: ' + msg.slice(0, 300) + ' (toque para fechar)';
+    d.onclick = () => d.remove();
+    document.body.appendChild(d);
+  };
+  window.addEventListener('error', (e) => show(String(e.message || e.error)));
+  window.addEventListener('unhandledrejection', (e) => show(String((e.reason && e.reason.message) || e.reason)));
 }
