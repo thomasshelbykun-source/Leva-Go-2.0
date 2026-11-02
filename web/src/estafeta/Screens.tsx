@@ -16,7 +16,7 @@ const st = (s: string) => <Badge tone={STATE[s]?.[1]}>{STATE[s]?.[0] ?? s}</Badg
 
 export function CourierWelcome() {
   return (
-    <div className="welcome-hero">
+    <div className="welcome-hero welcome-estafeta">
       <div className="welcome-top">
         <Logo size={46} light />
         <p className="welcome-sub">Aplicação do Estafeta</p>

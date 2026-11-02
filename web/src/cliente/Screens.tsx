@@ -12,7 +12,7 @@ import {
 export function Welcome() {
   const cfg = useConfig();
   return (
-    <div className="welcome-hero">
+    <div className="welcome-hero welcome-cliente">
       <div className="welcome-top">
         <Logo size={46} light slogan />
       </div>

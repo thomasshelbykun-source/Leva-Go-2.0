@@ -407,3 +407,13 @@ td input { min-height: 36px; padding: 0.35rem 0.5rem; }
 .plan-qty { font-weight: 600; }
 .plan-card button { width: 100%; margin-top: 0.4rem; }
 .service-card .tag { display: inline-block; margin-top: 0.3rem; font-weight: 700; color: var(--orange); }
+
+/* Fotos de fundo por área (recortadas, sem o logótipo gravado na imagem; o logótipo vem do SVG). */
+.welcome-cliente, .welcome-estafeta { background-color: var(--navy); background-size: cover; background-position: center 30%; }
+.welcome-cliente { background-image: linear-gradient(180deg, rgb(8 27 51 / 88%) 0%, rgb(8 27 51 / 30%) 32%, rgb(8 27 51 / 15%) 42%, rgb(8 27 51 / 94%) 64%), url('/img/bg-cliente.webp'); }
+.welcome-estafeta { background-image: linear-gradient(180deg, rgb(8 27 51 / 88%) 0%, rgb(8 27 51 / 30%) 32%, rgb(8 27 51 / 20%) 50%, rgb(8 27 51 / 92%) 78%), url('/img/bg-estafeta.webp'); }
+@media (min-width: 900px) {
+  .welcome-cliente, .welcome-estafeta { background-position: center 40%; }
+  .admin-login-art { align-content: start; padding-top: 4rem; background-color: var(--navy); background-size: cover; background-position: center;
+    background-image: linear-gradient(180deg, rgb(8 27 51 / 85%) 0%, rgb(8 27 51 / 25%) 40%, rgb(8 27 51 / 35%) 100%), url('/img/bg-admin.webp'); }
+}
