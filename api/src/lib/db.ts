@@ -53,6 +53,11 @@ export class Stmt {
 export class Db {
   constructor(readonly pool: pg.Pool) {}
 
+  /** Fecha as ligações. Na Cloudflare cada pedido abre e fecha a sua própria pool. */
+  async close() {
+    await this.pool.end().catch(() => undefined);
+  }
+
   prepare(sql: string) {
     return new Stmt(this, sql);
   }
@@ -100,14 +105,18 @@ class Rollback extends Error {}
 
 let shared: Db | null = null;
 
-/** Uma pool por instância da função. Na Vercel, use o endereço "pooled" do Neon. */
-export function getDb(url = process.env.DATABASE_URL): Db {
-  if (shared) return shared;
+/** Abre uma pool nova. Use o endereço "pooled" do Neon. */
+export function openDb(url: string | undefined, max = 5): Db {
   if (!url) throw new Error('DATABASE_URL em falta');
   const local = /@(localhost|127\.0\.0\.1)|host=\/|@\/|\/\/\//.test(url);
-  const pool = new pg.Pool({ connectionString: url, max: 5, idleTimeoutMillis: 10_000, ssl: local ? undefined : { rejectUnauthorized: true } });
+  const pool = new pg.Pool({ connectionString: url, max, idleTimeoutMillis: 10_000, ssl: local ? undefined : { rejectUnauthorized: true } });
   // O Neon pode fechar ligações paradas; sem isto, o erro derrubava a função.
   pool.on('error', (err) => console.error('pg pool', err.message));
-  shared = new Db(pool);
+  return new Db(pool);
+}
+
+/** Uma pool partilhada por processo (servidor local e testes). */
+export function getDb(url = process.env.DATABASE_URL): Db {
+  if (!shared) shared = openDb(url);
   return shared;
 }

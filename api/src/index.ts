@@ -1,8 +1,7 @@
-import { waitUntil } from '@vercel/functions';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { all, ApiError, getSetting, nowIso, one, parseJson, run, type Env, type Vars } from './lib/core.js';
-import { getDb } from './lib/db.js';
+import { getDb, openDb } from './lib/db.js';
 import { fitsBusinessHours, type OrderStatus } from './lib/domain.js';
 import { envFlags, loadHours, loadSession, notifyStmt, transition, type OrderRow } from './lib/services.js';
 import admin from './routes/admin.js';
@@ -15,11 +14,19 @@ import { manualMethods, PAY_DEFAULTS } from './lib/adapters.js';
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
-/** Configuração lida das variáveis de ambiente da Vercel (ou do ficheiro .env local). */
-export function loadEnv(): Env {
-  const e = process.env;
+type Vars0 = Record<string, string | undefined>;
+
+/** Verdadeiro quando a API corre num Cloudflare Worker. */
+const onWorkers = () => typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers';
+
+/**
+ * Configuração. Na Cloudflare vem das variáveis e segredos do Worker (`bindings`) e cada pedido
+ * abre a sua própria ligação à base de dados. No servidor local vem de process.env (ficheiro .env.local).
+ */
+export function loadEnv(bindings?: Vars0): Env {
+  const e: Vars0 = bindings ?? process.env;
   return {
-    DB: getDb(),
+    DB: bindings ? openDb(e.DATABASE_URL, 3) : getDb(),
     ENVIRONMENT: e.ENVIRONMENT ?? 'staging',
     CORS_ORIGINS: e.CORS_ORIGINS ?? 'http://localhost:5173',
     CRON_SECRET: e.CRON_SECRET,
@@ -37,19 +44,29 @@ export function loadEnv(): Env {
 let lastHousekeeping = 0;
 
 app.use('*', async (c, next) => {
+  if (onWorkers()) {
+    // Na Cloudflare a limpeza periódica corre pelo agendador do Worker (ver src/worker.ts).
+    c.env = loadEnv(c.env as unknown as Vars0);
+    try {
+      await next();
+    } finally {
+      c.executionCtx.waitUntil(c.env.DB.close());
+    }
+    return;
+  }
   c.env = loadEnv();
   await next();
-  // Limpeza periódica: corre no máximo uma vez a cada 15 minutos por instância, depois da resposta.
+  // Servidor local: limpeza no máximo uma vez a cada 15 minutos, depois da resposta.
   if (Date.now() - lastHousekeeping > 15 * 60_000) {
     lastHousekeeping = Date.now();
-    waitUntil(housekeeping(c.env).catch((err) => console.error('housekeeping', err)));
+    void housekeeping(c.env).catch((err) => console.error('housekeeping', err));
   }
 });
 
 app.use('*', async (c, next) => {
   const origins = c.env.CORS_ORIGINS.split(',').map((s) => s.trim());
   return cors({
-    origin: (o) => (origins.includes(o) || /^https:\/\/levago(-[a-z0-9-]+)?\.vercel\.app$/.test(o) || o === 'capacitor://localhost' || o === 'https://localhost' ? o : origins[0]!),
+    origin: (o) => (origins.includes(o) || /^https:\/\/([a-z0-9-]+\.)?levago(-[a-z0-9-]+)?\.(pages\.dev|vercel\.app)$/.test(o) || o === 'capacitor://localhost' || o === 'https://localhost' ? o : origins[0]!),
     allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     maxAge: 600,
@@ -103,7 +120,7 @@ app.get('/v1/config', async (c) => {
   });
 });
 
-/** Chamado pelo agendador da Vercel (vercel.json). A Vercel envia o CRON_SECRET no cabeçalho. */
+/** Limpeza manual. Exige o CRON_SECRET no cabeçalho. Na Cloudflare corre sozinha a cada 15 minutos. */
 app.get('/v1/internal/housekeeping', async (c) => {
   if (!c.env.CRON_SECRET || c.req.header('Authorization') !== `Bearer ${c.env.CRON_SECRET}`) throw new ApiError(401, 'sem_permissao', 'Sem permissão.');
   await housekeeping(c.env);

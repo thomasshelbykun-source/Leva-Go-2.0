@@ -1,4 +1,4 @@
-# Testa o LevaGo 2.0 em cada envio. A publicação é feita pela Vercel, ligada ao repositório.
+# Testa o LevaGo 2.0 em cada envio. A publicação na Cloudflare está em cloudflare.yml.
 name: Testes
 
 on:
@@ -34,5 +34,11 @@ jobs:
         run: npm run test:e2e
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      - name: API no runtime da Cloudflare (wrangler dev), fluxo completo
+        working-directory: api
+        run: npm run test:e2e
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+          E2E_RUNTIME: workers
       - name: Site, compilação
         run: npm run build -w web

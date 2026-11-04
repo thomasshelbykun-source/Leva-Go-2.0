@@ -1,0 +1,18 @@
+# API LevaGo 2.0 na Cloudflare Workers. A base de dados continua no Neon (Postgres).
+# Segredos (não ficam aqui): DATABASE_URL, RESEND_API_KEY, CRON_SECRET.
+# São enviados pelo GitHub Actions (.github/workflows/cloudflare.yml).
+name = "levago-api"
+main = "src/worker.ts"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[vars]
+ENVIRONMENT = "production"
+CORS_ORIGINS = "https://levago.pages.dev"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[observability]
+enabled = true

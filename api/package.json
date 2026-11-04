@@ -9,10 +9,11 @@
     "make-admin": "tsx scripts/make-admin.ts",
     "test": "vitest run",
     "test:e2e": "node test/e2e.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "deploy": "wrangler deploy",
+    "dev:workers": "wrangler dev"
   },
   "dependencies": {
-    "@vercel/functions": "^3.10.3",
     "hono": "^4.13.13",
     "pg": "^8.23.1"
   },
@@ -22,7 +23,8 @@
     "@types/pg": "^8.23.1",
     "tsx": "^4.23.15",
     "typescript": "^5.6.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wrangler": "^4.157.0"
   },
   "engines": {
     "node": "22.x"
