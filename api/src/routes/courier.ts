@@ -9,7 +9,7 @@ import { auditStmt, earningStmt, guardedBatch, loadHours, notifyStmt, requireRol
 const r = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 const ALLOWED_UPLOADS = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // a Vercel aceita pedidos até 4,5 MB
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // limite de 4 MB por ficheiro
 
 async function courierState(db: Db, userId: string) {
   const profile = await one<{ status: string; link_type: string; is_online: number; rating_avg: number | null; rating_count: number; zone_id: string | null }>(
