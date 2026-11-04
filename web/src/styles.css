@@ -491,3 +491,62 @@ ul.plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.35rem;
 /* App Android: sem desfoque por trás dos cartões; alguns telemóveis deixam de actualizar o ecrã com ele. */
 .in-app * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 .in-app .hs .choice, .in-app .hs .btn-secondary { background: rgb(13 42 79 / 72%); }
+
+/* ------------------------------------------------------------------ Boas-vindas do cliente (mockup 2026-11-04) */
+.wl { min-height: 100dvh; background: #052441; color: #fff; display: flex; justify-content: center; }
+.wl-inner {
+  --hw: min(100vw, 520px);
+  --hero: max(calc(var(--hw) * 0.78), calc(100dvh - 470px));
+  position: relative; width: 100%; max-width: 520px; min-height: 100dvh; display: flex; flex-direction: column;
+  padding: 0 1.25rem calc(5.5rem + env(safe-area-inset-bottom)); overflow: hidden;
+  background: url(/img/hero-cliente-base.webp) bottom center / 100% auto no-repeat, #052441;
+}
+.wl-inner::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: var(--hero); pointer-events: none;
+  background:
+    linear-gradient(180deg, rgb(5 36 65 / 0%) 70%, #052441 100%),
+    linear-gradient(90deg, rgb(5 36 65 / 45%) 0%, rgb(5 36 65 / 10%) 50%, rgb(5 36 65 / 0%) 65%),
+    url(/img/hero-cliente.webp) right top / cover no-repeat;
+}
+.wl-inner > * { position: relative; }
+.wl-logo { position: absolute; left: 1.25rem; top: calc(env(safe-area-inset-top) + var(--hw) * 0.06); }
+.wl-logo .logo-word { font-style: italic; font-weight: 800; letter-spacing: -0.02em; }
+.wl-logo .logo-leva { color: #fff; }
+.wl-swoosh { display: block; width: 62%; height: auto; margin: -0.35rem 0 0 30%; }
+.wl-copy { padding-top: calc(var(--hero) * 0.54); }
+.wl-title { margin: 0; font-size: clamp(1.6rem, 6.6vw, 2.3rem); line-height: 1.14; font-weight: 700; letter-spacing: -0.01em; text-shadow: 0 2px 12px rgb(0 0 0 / 45%); }
+.wl-title em { color: var(--orange); font-style: italic; font-weight: 800; }
+.wl-under { display: block; width: 26%; height: auto; margin: 0.25rem 0 0 0.6rem; }
+.wl-sub { margin: 0.7rem 0 1.4rem; max-width: 14.5em; font-size: clamp(0.98rem, 4vw, 1.2rem); line-height: 1.4; color: #fff; text-shadow: 0 1px 8px rgb(0 0 0 / 50%); }
+.wl-chips { list-style: none; margin: auto 0 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 0.55rem; }
+.wl-chips li {
+  display: flex; align-items: center; justify-content: center; gap: 0.45rem; min-height: 46px; padding: 0 0.5rem;
+  border: 1px solid rgb(255 255 255 / 22%); border-radius: 14px; background: rgb(10 40 72 / 72%);
+  font-weight: 600; font-size: 0.9rem; white-space: nowrap;
+}
+.wl-chips .icon, .wl-hours .icon, .wl-place .icon { color: var(--orange); flex: none; }
+.wl-hours {
+  display: flex; align-items: center; gap: 0.9rem; margin-top: 0.9rem; padding: 0.8rem 1rem;
+  border: 1px solid rgb(255 255 255 / 22%); border-radius: 16px; background: rgb(10 40 72 / 72%);
+}
+.wl-hours .icon { color: #fff; }
+.wl-hours strong { display: block; font-size: 0.92rem; font-weight: 600; }
+.wl-hours p { margin: 0.2rem 0 0; font-size: 0.78rem; line-height: 1.5; color: rgb(255 255 255 / 92%); }
+.wl-sep { opacity: 0.85; padding: 0 0.1rem 0 0.45rem; }
+.wl-nw { white-space: nowrap; }
+.wl-actions { display: grid; gap: 0.75rem; margin-top: 1.1rem; }
+.wl-btn {
+  display: flex; align-items: center; justify-content: center; gap: 0.9rem; min-height: 58px; border-radius: 999px;
+  font-size: 1.3rem; font-weight: 700; text-decoration: none; color: #fff;
+}
+.wl-btn:hover { text-decoration: none; filter: brightness(1.05); }
+.wl-btn-primary { background: linear-gradient(180deg, #ff7a1a, #f26a12); box-shadow: 0 6px 18px rgb(242 106 18 / 35%); }
+.wl-btn-outline { border: 2px solid #fff; background: transparent; }
+.wl-place { display: flex; align-items: center; justify-content: center; gap: 0.55rem; margin: 1.1rem 0 0; font-size: 1.05rem; }
+.wl-place .icon { color: #fff; }
+.wl-switch { margin: 0.35rem 0 0; text-align: center; font-size: 0.8rem; }
+.wl-switch a { color: rgb(255 255 255 / 70%); }
+@media (max-width: 370px) {
+  .wl-chips li { font-size: 0.8rem; gap: 0.3rem; }
+  .wl-btn { font-size: 1.15rem; min-height: 52px; }
+}
