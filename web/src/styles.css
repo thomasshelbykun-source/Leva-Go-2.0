@@ -637,3 +637,23 @@ ul.plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.35rem;
   .au .pass-toggle { font-size: 0.9rem; }
   .au .pass-input input { padding-right: 7.5rem; }
 }
+
+/* Entrar / Criar conta: alinhamento e enquadramento (2026-11-04) */
+.au-swoosh { width: 72%; margin: -0.3rem auto 0; }
+.au-photo .au-titles { margin-right: 0; }
+.au-check { padding-left: 0.1rem; }
+.au-area { margin-top: 0.2rem; }
+@media (min-width: 760px) {
+  .au {
+    align-items: center; padding: 2.5rem 1rem;
+    background: linear-gradient(180deg, rgb(3 42 79 / 78%), rgb(3 42 79 / 92%)), url(/img/bg-cliente.webp) center / cover fixed no-repeat, #032a4f;
+  }
+  .au.au-estafeta { background: linear-gradient(180deg, rgb(3 42 79 / 78%), rgb(3 42 79 / 92%)), url(/img/bg-estafeta.webp) center / cover fixed no-repeat, #032a4f; }
+  .au-inner { max-width: 480px; min-height: 0; border-radius: 30px; background-color: #032a4f; box-shadow: 0 30px 70px rgb(0 0 0 / 50%), 0 0 0 1px rgb(255 255 255 / 8%); }
+  .au-photo .au-head { min-height: 317px; }
+  .au-photo .au-titles { width: 66%; }
+  .au-photo .au-titles h1 { font-size: 1.7rem; }
+  .au-navy .au-card { padding-bottom: 2rem; }
+  .au-photo .au-inner { padding-bottom: 4rem; }
+  .au-card { padding-left: 1.5rem; padding-right: 1.5rem; }
+}

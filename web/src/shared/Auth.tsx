@@ -79,15 +79,16 @@ function SubmitButton({ busy, disabled, children }: { busy?: boolean; disabled?:
 }
 
 /** Mostra em que área a pessoa está e deixa mudar de área sem confusão. */
-function AreaSwitch() {
+function AreaSwitch({ page }: { page: 'entrar' | 'registo' }) {
   const s = useSession();
+  const other = s.app === 'estafeta' ? '/cliente' : '/estafeta';
   return (
     <div className="au-area">
       <span>
         <Icon name="user" size={20} /> Estás na área <strong>{AREA[s.app]}</strong>
       </span>
       <span className="au-area-sep" aria-hidden="true" />
-      <Link to="/" reloadDocument={IN_APP}>
+      <Link to={`${other}/${page}`} reloadDocument={IN_APP}>
         <Icon name="swap" size={20} /> Mudar de área
       </Link>
     </div>
@@ -165,7 +166,7 @@ export function Login() {
         <p className="au-alt">
           Ainda não tens conta? <Link to={`${s.base}/registo`}>Registar</Link>
         </p>
-        <AreaSwitch />
+        <AreaSwitch page="entrar" />
       </form>
     </AuthPage>
   );
@@ -255,6 +256,7 @@ export function Register() {
         <p className="au-alt">
           Já tens conta? <Link to={`${s.base}/entrar`}>Entrar</Link>
         </p>
+        <AreaSwitch page="registo" />
       </form>
     </AuthPage>
   );

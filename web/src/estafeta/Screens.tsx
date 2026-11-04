@@ -33,7 +33,7 @@ export function CourierWelcome() {
         Quero ser estafeta
       </ButtonLink>
       <p className="small center">
-        <Link to="/" reloadDocument={IN_APP}>Mudar de área</Link>
+        <Link to="/cliente/boas-vindas" reloadDocument={IN_APP}>Mudar de área</Link>
       </p>
     </HeroSheet>
   );
