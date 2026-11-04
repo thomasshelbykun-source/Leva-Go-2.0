@@ -4,28 +4,77 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { setToken } from './api';
 import { Button, ErrorBox, Field, Notice, useAction } from './ui';
 import { useSession } from './session';
-import { Logo } from './brand';
-import { HeroSheet, PasswordInput, PhoneInput } from './Hero';
+import { Icon, Logo, type IconName } from './brand';
+import { PasswordInput, PhoneInput } from './Hero';
 
 const AREA = { cliente: 'Cliente', estafeta: 'Estafeta', admin: 'Admin' } as const;
 
-function Brand({ title, sub }: { title: string; sub?: string }) {
+/**
+ * Cliente e Estafeta (mockups de 2026-11-04).
+ * - "photo": fotografia em cima com o título à direita (Entrar).
+ * - "navy": faixa azul com a caixa laranja (Criar conta, Recuperar acesso).
+ * O formulário fica num cartão branco por baixo.
+ */
+function AuthPage({ variant, title, sub, children }: { variant: 'photo' | 'navy'; title: string; sub?: string; children: React.ReactNode }) {
+  const s = useSession();
   return (
-    <div className="hs-head">
-      <h1 className="hs-title">{title}</h1>
-      {sub && <p className="hs-sub">{sub}</p>}
+    <div className={`au au-${variant} au-${s.app}`}>
+      <div className="au-inner">
+        <header className="au-head">
+          <div className="au-bar">
+            <button type="button" className="au-back" aria-label="Voltar" onClick={() => history.back()}>
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M20 12H4M10 6l-6 6 6 6" />
+              </svg>
+            </button>
+            <div className="au-logo">
+              <Logo size={30} light />
+              <svg className="au-swoosh" viewBox="0 0 200 14" aria-hidden="true">
+                <path d="M4 12C60 1 140 0 196 6" fill="none" stroke="var(--orange)" strokeWidth="5" strokeLinecap="round" />
+              </svg>
+            </div>
+          </div>
+          {variant === 'navy' && <img className="au-box" src="/img/auth-box.webp" alt="" />}
+          <div className="au-titles">
+            <h1>{title}</h1>
+            {sub && <p>{sub}</p>}
+          </div>
+        </header>
+        <div className="au-card">{children}</div>
+      </div>
     </div>
   );
 }
 
-/** Cliente e Estafeta: fotografia em cima e formulário num painel branco. */
-function AuthShell({ children }: { children: React.ReactNode }) {
-  const s = useSession();
-  if (s.app === 'admin') return <div className="auth">{children}</div>;
+/** Campo com ícone à esquerda, como nos mockups. */
+function IconField({
+  icon, label, required, hint, hintIcon, error, children,
+}: { icon: IconName; label: string; required?: boolean; hint?: string; hintIcon?: IconName; error?: string | null; children: React.ReactNode }) {
   return (
-    <HeroSheet img={s.app} compact back>
-      {children}
-    </HeroSheet>
+    <div className={`au-field ${error ? 'has-error' : ''}`}>
+      <span className="au-field-icon"><Icon name={icon} size={30} /></span>
+      <label className="au-field-body">
+        <span className="au-label">
+          {label}
+          {required && <span className="au-req"> *</span>}
+        </span>
+        {children}
+        {hint && !error && (
+          <span className="au-hint">
+            {hintIcon && <Icon name={hintIcon} size={18} />} {hint}
+          </span>
+        )}
+        {error && <span className="field-error">{error}</span>}
+      </label>
+    </div>
+  );
+}
+
+function SubmitButton({ busy, disabled, children }: { busy?: boolean; disabled?: boolean; children: React.ReactNode }) {
+  return (
+    <button className="au-submit" disabled={busy || disabled}>
+      {busy ? 'Aguarde…' : children} {!busy && <Icon name="arrowRight" size={26} />}
+    </button>
   );
 }
 
@@ -33,9 +82,15 @@ function AuthShell({ children }: { children: React.ReactNode }) {
 function AreaSwitch() {
   const s = useSession();
   return (
-    <p className="small center area-switch">
-      Está na área <strong>{AREA[s.app]}</strong> · <Link to="/" reloadDocument={IN_APP}>Mudar de área</Link>
-    </p>
+    <div className="au-area">
+      <span>
+        <Icon name="user" size={20} /> Estás na área <strong>{AREA[s.app]}</strong>
+      </span>
+      <span className="au-area-sep" aria-hidden="true" />
+      <Link to="/" reloadDocument={IN_APP}>
+        <Icon name="swap" size={20} /> Mudar de área
+      </Link>
+    </div>
   );
 }
 
@@ -60,53 +115,60 @@ export function Login() {
       nav(loc.state?.from ?? s.base, { replace: true });
     }
   };
-  const admin = s.app === 'admin';
-  const form = (
-    <form className="card stack" onSubmit={submit}>
-      {admin ? (
-        <div className="brand">
-          <Logo size={34} />
-          <h1>Painel Administrativo</h1>
-          <small>Gestão da LevaGo</small>
-        </div>
-      ) : (
-        <Brand title={s.app === 'estafeta' ? 'Entrar como estafeta' : 'Entrar na tua conta'} />
-      )}
-      {admin ? (
-        <Field label="Email ou telemóvel">
-          <input autoComplete="username" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="admin@levago.co.mz" required />
-        </Field>
-      ) : (
-        <Field label="Número de telefone" hint="Ex.: 84 123 4567">
-          <PhoneInput value={phone} onChange={setPhone} />
-        </Field>
-      )}
-      <Field label="Palavra-passe">
-        <PasswordInput value={password} onChange={setPassword} />
-      </Field>
-      <ErrorBox error={a.error} />
-      <Button busy={a.busy}>Entrar</Button>
-      <Link className="small center" to={`${s.base}/recuperar`}>
-        Esqueceu a palavra-passe?
-      </Link>
-      {!admin && (
-        <p className="small center">
-          Ainda não tem conta? <Link to={`${s.base}/registo`}>Registar</Link>
-        </p>
-      )}
-      <AreaSwitch />
-    </form>
-  );
-  if (admin)
+
+  if (s.app === 'admin')
     return (
       <div className="admin-login">
-        {form}
+        <form className="card stack" onSubmit={submit}>
+          <div className="brand">
+            <Logo size={34} />
+            <h1>Painel Administrativo</h1>
+            <small>Gestão da LevaGo</small>
+          </div>
+          <Field label="Email ou telemóvel">
+            <input autoComplete="username" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="admin@levago.co.mz" required />
+          </Field>
+          <Field label="Palavra-passe">
+            <PasswordInput value={password} onChange={setPassword} />
+          </Field>
+          <ErrorBox error={a.error} />
+          <Button busy={a.busy}>Entrar</Button>
+          <Link className="small center" to={`${s.base}/recuperar`}>
+            Esqueceu a palavra-passe?
+          </Link>
+        </form>
         <div className="admin-login-art" aria-hidden="true">
           <Logo size={56} light slogan />
         </div>
       </div>
     );
-  return <AuthShell>{form}</AuthShell>;
+
+  const courier = s.app === 'estafeta';
+  return (
+    <AuthPage
+      variant="photo"
+      title={courier ? 'Entrar como estafeta' : 'Entrar na tua conta'}
+      sub={courier ? 'Acede à tua conta e continua a fazer entregas.' : 'Acede à tua conta e continua a enviar ou receber encomendas.'}
+    >
+      <form className="au-form" onSubmit={submit}>
+        <IconField icon="phone" label="Número de telefone" hint="Ex.: 84 123 4567">
+          <PhoneInput value={phone} onChange={setPhone} />
+        </IconField>
+        <IconField icon="lock" label="Palavra-passe">
+          <PasswordInput value={password} onChange={setPassword} placeholder="Introduz a tua palavra-passe" />
+        </IconField>
+        <ErrorBox error={a.error} />
+        <SubmitButton busy={a.busy}>Entrar</SubmitButton>
+        <Link className="au-forgot" to={`${s.base}/recuperar`}>
+          Esqueceste a palavra-passe?
+        </Link>
+        <p className="au-alt">
+          Ainda não tens conta? <Link to={`${s.base}/registo`}>Registar</Link>
+        </p>
+        <AreaSwitch />
+      </form>
+    </AuthPage>
+  );
 }
 
 export function Register() {
@@ -118,78 +180,83 @@ export function Register() {
   const a = useAction();
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
   const fieldErr = (k: string) => (a.error?.details as Record<string, string> | null)?.[k];
+  const courier = s.app === 'estafeta';
+  const done = async (token: string) => {
+    await s.signIn(token);
+    nav(courier ? `${s.base}/candidatura` : s.base, { replace: true });
+  };
 
   if (ver) {
     return (
-      <AuthShell>
+      <AuthPage variant="navy" title="Confirmar e-mail" sub={`Enviámos um código de 6 dígitos para ${f.email}. Vê também a pasta de spam.`}>
         <form
-          className="card stack"
+          className="au-form"
           onSubmit={async (e) => {
             e.preventDefault();
             const r = await a.run(() => s.api.post<{ token: string }>('/auth/register/verify', { verification_id: ver.verification_id, code }));
-            if (r) {
-              await s.signIn(r.token);
-              nav(s.app === 'estafeta' ? `${s.base}/candidatura` : s.base, { replace: true });
-            }
+            if (r) await done(r.token);
           }}
         >
-          <Brand title="Confirmar email" />
-          <p>Enviámos um código de 6 dígitos para {f.email}. Veja também a pasta de spam.</p>
           {ver.dev_code && <Notice tone="warn">Ambiente de teste: o código é {ver.dev_code}</Notice>}
-          <Field label="Código">
+          <IconField icon="mail" label="Código">
             <input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} required />
-          </Field>
+          </IconField>
           <ErrorBox error={a.error} />
-          <Button busy={a.busy} disabled={code.length !== 6}>
+          <SubmitButton busy={a.busy} disabled={code.length !== 6}>
             Confirmar
-          </Button>
-          <Button type="button" kind="ghost" onClick={() => setVer(null)}>
+          </SubmitButton>
+          <button type="button" className="au-forgot au-linkbtn" onClick={() => setVer(null)}>
             Alterar dados
-          </Button>
+          </button>
         </form>
-      </AuthShell>
+      </AuthPage>
     );
   }
 
   return (
-    <AuthShell>
+    <AuthPage
+      variant="navy"
+      title={courier ? 'Criar conta de estafeta' : 'Criar conta'}
+      sub={courier ? 'Regista-te e começa a fazer entregas com a LevaGo.' : 'Regista-te e começa a enviar ou receber encomendas com a LevaGo.'}
+    >
       <form
-        className="card stack"
+        className="au-form"
         onSubmit={async (e) => {
           e.preventDefault();
-          const r = await a.run(() => s.api.post('/auth/register/start', { ...f, email: f.email.trim(), app: s.app }));
-          if (r) setVer(r);
+          const r = await a.run(() =>
+            s.api.post<{ token?: string; verification_id?: string; dev_code?: string }>('/auth/register/start', { ...f, email: f.email.trim() || undefined, app: s.app }),
+          );
+          if (r?.token) await done(r.token);
+          else if (r?.verification_id) setVer({ verification_id: r.verification_id, dev_code: r.dev_code });
         }}
       >
-        <Brand title={s.app === 'estafeta' ? 'Criar conta de estafeta' : 'Criar conta'} />
-        <Field label="Nome completo" error={fieldErr('name')}>
-          <input autoComplete="name" value={f.name} onChange={set('name')} required />
-        </Field>
-        <Field label="Telemóvel" hint="Vodacom, Tmcel ou Movitel (8X XXX XXXX)" error={fieldErr('phone')}>
+        <IconField icon="user" label="Nome completo" required error={fieldErr('name')}>
+          <input autoComplete="name" value={f.name} onChange={set('name')} placeholder="Ex.: Eduardo da Costa" required />
+        </IconField>
+        <IconField icon="phone" label="Telemóvel" required hint="Vodacom, Tmcel ou Movitel (8X XXX XXXX)" hintIcon="info" error={fieldErr('phone')}>
           <PhoneInput value={f.phone} onChange={(v) => setF({ ...f, phone: v })} />
-        </Field>
-        <Field label="Email" hint="Enviamos o código de confirmação para este email" error={fieldErr('email')}>
-          <input type="email" autoComplete="email" value={f.email} onChange={set('email')} required />
-        </Field>
-        <Field label="Palavra-passe" hint="8 ou mais caracteres, com letras e números" error={fieldErr('password')}>
-          <PasswordInput autoComplete="new-password" value={f.password} onChange={(v) => setF({ ...f, password: v })} />
-        </Field>
-        <label className="check">
-          <input type="checkbox" checked={f.consent_terms} onChange={set('consent_terms')} /> Aceito os <Link to="/termos">Termos de utilização</Link>
+        </IconField>
+        <IconField icon="mail" label="E-mail (opcional)" hint="Se indicares, enviaremos o código de confirmação para este e-mail." error={fieldErr('email')}>
+          <input type="email" autoComplete="email" value={f.email} onChange={set('email')} placeholder="Ex.: eduardo@gmail.com" />
+        </IconField>
+        <IconField icon="lock" label="Palavra-passe" required hint="Mínimo de 8 caracteres, com letras e números." hintIcon="shieldCheck" error={fieldErr('password')}>
+          <PasswordInput autoComplete="new-password" value={f.password} onChange={(v) => setF({ ...f, password: v })} placeholder="Cria uma palavra-passe" />
+        </IconField>
+        <label className="au-check">
+          <input type="checkbox" checked={f.consent_terms} onChange={set('consent_terms')} /> <span>Aceito os <Link to="/termos">Termos de Utilização</Link></span>
         </label>
-        <label className="check">
-          <input type="checkbox" checked={f.consent_privacy} onChange={set('consent_privacy')} /> Aceito a <Link to="/privacidade">Política de privacidade</Link>
+        <label className="au-check">
+          <input type="checkbox" checked={f.consent_privacy} onChange={set('consent_privacy')} /> <span>Aceito a <Link to="/privacidade">Política de Privacidade</Link></span>
         </label>
         <ErrorBox error={a.error} />
-        <Button busy={a.busy} disabled={!f.consent_terms || !f.consent_privacy}>
+        <SubmitButton busy={a.busy} disabled={!f.consent_terms || !f.consent_privacy}>
           Continuar
-        </Button>
-        <p className="small center">
-          Já tem conta? <Link to={`${s.base}/entrar`}>Entrar</Link>
+        </SubmitButton>
+        <p className="au-alt">
+          Já tens conta? <Link to={`${s.base}/entrar`}>Entrar</Link>
         </p>
-        <AreaSwitch />
       </form>
-    </AuthShell>
+    </AuthPage>
   );
 }
 
@@ -202,55 +269,65 @@ export function ResetPassword() {
   const [password, setPassword] = useState('');
   const [done, setDone] = useState(false);
   const a = useAction();
-  return (
-    <AuthShell>
-      <div className="card stack">
-        <Brand title="Recuperar acesso" />
-        {done ? (
-          <>
-            <Notice tone="ok">Palavra-passe alterada. Todas as sessões antigas foram terminadas.</Notice>
-            <Button onClick={() => nav(`${s.base}/entrar`)}>Entrar</Button>
-          </>
-        ) : !ver ? (
-          <form
-            className="stack"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const r = await a.run(() => s.api.post('/auth/reset/start', { phone }));
-              if (r) setVer(r);
-            }}
-          >
-            <Field label="Telemóvel">
-              <PhoneInput value={phone} onChange={setPhone} />
-            </Field>
-            <ErrorBox error={a.error} />
-            <Button busy={a.busy}>Enviar código</Button>
-          </form>
-        ) : (
-          <form
-            className="stack"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const r = await a.run(() => s.api.post('/auth/reset/finish', { verification_id: ver.verification_id, code, password }));
-              if (r) setDone(true);
-            }}
-          >
-            <Notice>{ver.message}</Notice>
-            {ver.dev_code && <Notice tone="warn">Ambiente de teste: o código é {ver.dev_code}</Notice>}
-            <Field label="Código">
-              <input inputMode="numeric" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} required />
-            </Field>
-            <Field label="Nova palavra-passe" hint="8 ou mais caracteres, com letras e números">
-              <PasswordInput autoComplete="new-password" value={password} onChange={setPassword} />
-            </Field>
-            <ErrorBox error={a.error} />
-            <Button busy={a.busy}>Alterar palavra-passe</Button>
-          </form>
-        )}
-        <Link className="small center" to={`${s.base}/entrar`}>
-          Voltar ao início de sessão
-        </Link>
+  const body = done ? (
+    <div className="au-form">
+      <Notice tone="ok">Palavra-passe alterada. Todas as sessões antigas foram terminadas.</Notice>
+      <button className="au-submit" type="button" onClick={() => nav(`${s.base}/entrar`)}>
+        Entrar <Icon name="arrowRight" size={26} />
+      </button>
+    </div>
+  ) : !ver ? (
+    <form
+      className="au-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const r = await a.run(() => s.api.post('/auth/reset/start', { phone }));
+        if (r) setVer(r);
+      }}
+    >
+      <IconField icon="phone" label="Telemóvel">
+        <PhoneInput value={phone} onChange={setPhone} />
+      </IconField>
+      <ErrorBox error={a.error} />
+      <SubmitButton busy={a.busy}>Enviar código</SubmitButton>
+    </form>
+  ) : (
+    <form
+      className="au-form"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const r = await a.run(() => s.api.post('/auth/reset/finish', { verification_id: ver.verification_id, code, password }));
+        if (r) setDone(true);
+      }}
+    >
+      <Notice>{ver.message}</Notice>
+      {ver.dev_code && <Notice tone="warn">Ambiente de teste: o código é {ver.dev_code}</Notice>}
+      <IconField icon="mail" label="Código">
+        <input inputMode="numeric" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} required />
+      </IconField>
+      <IconField icon="lock" label="Nova palavra-passe" hint="8 ou mais caracteres, com letras e números">
+        <PasswordInput autoComplete="new-password" value={password} onChange={setPassword} />
+      </IconField>
+      <ErrorBox error={a.error} />
+      <SubmitButton busy={a.busy}>Alterar palavra-passe</SubmitButton>
+    </form>
+  );
+  if (s.app === 'admin')
+    return (
+      <div className="auth">
+        <div className="card stack">
+          <h1>Recuperar acesso</h1>
+          {body}
+          <Link className="small center" to={`${s.base}/entrar`}>Voltar ao início de sessão</Link>
+        </div>
       </div>
-    </AuthShell>
+    );
+  return (
+    <AuthPage variant="navy" title="Recuperar acesso">
+      {body}
+      <p className="au-alt">
+        <Link to={`${s.base}/entrar`}>Voltar ao início de sessão</Link>
+      </p>
+    </AuthPage>
   );
 }

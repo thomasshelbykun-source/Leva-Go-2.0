@@ -62,11 +62,13 @@ export function PasswordInput({
   onChange,
   autoComplete = 'current-password',
   minLength,
+  placeholder,
 }: {
   value: string;
   onChange: (v: string) => void;
   autoComplete?: string;
   minLength?: number;
+  placeholder?: string;
 }) {
   const [show, setShow] = useState(false);
   return (
@@ -77,9 +79,13 @@ export function PasswordInput({
         minLength={minLength}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
         required
       />
       <button type="button" className="pass-toggle" onClick={() => setShow(!show)}>
+        <svg className="pass-eye" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6" />
+        </svg>
         {show ? 'Ocultar' : 'Mostrar'}
       </button>
     </div>

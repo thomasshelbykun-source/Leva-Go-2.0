@@ -1,6 +1,6 @@
 import { IN_APP } from '../shared/inapp';
 import { HeroSheet } from '../shared/Hero';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Avatar, Icon, Logo } from '../shared/brand';
 import { useConfig } from '../shared/config';
@@ -11,30 +11,83 @@ import {
 } from '../shared/ui';
 
 // ------------------------------------------------------------------ Boas-vindas
+const WD_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+/** Junta dias seguidos com o mesmo horário: "Dom–Qui: 07:00 – 22:00". */
+function hourGroups(hours: { weekday: number; opens_at: string; closes_at: string }[]) {
+  const sorted = [...hours].sort((x, y) => x.weekday - y.weekday);
+  const out: { from: number; to: number; text: string }[] = [];
+  for (const h of sorted) {
+    const text = `${h.opens_at.slice(0, 5)} – ${h.closes_at.slice(0, 5)}`;
+    const last = out[out.length - 1];
+    if (last && last.text === text && last.to === h.weekday - 1) last.to = h.weekday;
+    else out.push({ from: h.weekday, to: h.weekday, text });
+  }
+  return out.map((g) => `${WD_SHORT[g.from]}${g.to !== g.from ? `–${WD_SHORT[g.to]}` : ''}: ${g.text}`);
+}
+
 export function Welcome() {
   const cfg = useConfig();
+  const groups = cfg ? hourGroups(cfg.hours) : [];
   return (
-    <HeroSheet img="cliente">
-      <div className="hs-head">
-        <h1 className="hs-title">Entregas rápidas e seguras em Quelimane!</h1>
-      </div>
-      <ul className="ticks">
-        <li>Em toda a cidade de Quelimane, até 15 kg.</li>
-        <li>Planos com encomendas incluídas. Acompanha a entrega em tempo real.</li>
-      </ul>
-      {cfg && (
-        <p className="small">
-          Horário: {cfg.hours.map((h) => `${WEEKDAYS[h.weekday]!.slice(0, 3)} ${h.opens_at}-${h.closes_at}`).join(' · ')}
+    <div className="wl">
+      <div className="wl-inner">
+        <header className="wl-logo">
+          <Logo size={44} light />
+          <svg className="wl-swoosh" viewBox="0 0 200 14" aria-hidden="true">
+            <path d="M4 12C60 1 140 0 196 6" fill="none" stroke="var(--orange)" strokeWidth="4" strokeLinecap="round" />
+          </svg>
+        </header>
+        <div className="wl-copy">
+          <h1 className="wl-title">
+            As tuas entregas,
+            <br />
+            <em>sem</em> complicações.
+          </h1>
+          <svg className="wl-under" viewBox="0 0 200 14" aria-hidden="true">
+            <path d="M4 12C60 1 140 0 196 6" fill="none" stroke="var(--orange)" strokeWidth="4" strokeLinecap="round" />
+          </svg>
+          <p className="wl-sub">Envia encomendas ou pede recolhas em toda a cidade de Quelimane.</p>
+        </div>
+        <ul className="wl-chips">
+          <li><Icon name="bolt" size={20} /> Rápido</li>
+          <li><Icon name="shieldCheck" size={20} /> Seguro</li>
+          <li><Icon name="headset" size={20} /> Suporte local</li>
+        </ul>
+        {groups.length > 0 && (
+          <div className="wl-hours">
+            <Icon name="calendar" size={28} />
+            <div>
+              <strong>Horário de funcionamento:</strong>
+              <p>
+                {groups.map((g, i) => (
+                  <Fragment key={g}>
+                    <span className="wl-nw">
+                      {g}
+                      {i < groups.length - 1 && <span className="wl-sep">|</span>}
+                    </span>{' '}
+                  </Fragment>
+                ))}
+              </p>
+            </div>
+          </div>
+        )}
+        <div className="wl-actions">
+          <Link to="/cliente/registo" className="wl-btn wl-btn-primary">
+            <Icon name="userPlus" size={24} /> Criar conta
+          </Link>
+          <Link to="/cliente/entrar" className="wl-btn wl-btn-outline">
+            <Icon name="login" size={24} /> Entrar
+          </Link>
+        </div>
+        <p className="wl-place">
+          <Icon name="pin" size={20} /> Quelimane, Moçambique
         </p>
-      )}
-      <ButtonLink to="/cliente/registo">Criar conta</ButtonLink>
-      <ButtonLink to="/cliente/entrar" kind="secondary">
-        Entrar
-      </ButtonLink>
-      <p className="small center">
-        <Icon name="pin" size={16} /> Quelimane, Moçambique · <Link to="/" reloadDocument={IN_APP}>Mudar de área</Link>
-      </p>
-    </HeroSheet>
+        <p className="wl-switch">
+          <Link to="/" reloadDocument={IN_APP}>Mudar de área</Link>
+        </p>
+      </div>
+    </div>
   );
 }
 

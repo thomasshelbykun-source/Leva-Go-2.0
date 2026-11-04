@@ -12,19 +12,42 @@ const APP_ROLES: Record<AppName, Role[]> = {
   admin: ['admin', 'super_admin'],
 };
 
-/** Passo 1 do registo: valida os dados, guarda-os pendentes e envia o código para o email (sem SMS por agora). */
+/**
+ * Passo 1 do registo. O email é opcional (em Moçambique pouca gente o usa):
+ * - com email: guarda os dados pendentes e envia o código para o email (passo 2 em /register/verify);
+ * - sem email: cria a conta logo e devolve a sessão (não há SMS para confirmar o número).
+ */
 auth.post('/register/start', async (c) => {
   const body = need<{ name: string; phone: string; email?: string; password: string; consent_terms: boolean; consent_privacy: boolean; app: AppName }>(await c.req.json(), {
     name: v.str(2, 80),
     phone: v.phone(),
-    email: (x) => (typeof x === 'string' && x.length <= 120 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.trim()) ? null : 'Indique um email válido. O código de confirmação vai para o email.'),
+    email: (x) =>
+      x === undefined || x === null || (typeof x === 'string' && x.trim() === '') || (typeof x === 'string' && x.length <= 120 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.trim()))
+        ? null
+        : 'Indique um email válido ou deixe o campo vazio.',
     password: passwordProblem,
     consent_terms: (x) => (x === true ? null : 'É preciso aceitar os termos.'),
     consent_privacy: (x) => (x === true ? null : 'É preciso aceitar a política de privacidade.'),
     app: v.oneOf('cliente', 'estafeta'),
   });
   const phone = normalizePhone(body.phone)!;
-  const email = body.email!.trim().toLowerCase();
+  const email = (body.email ?? '').trim().toLowerCase();
+  if (!email) {
+    await rateLimit(c.env.DB, `reg-ip:${c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? c.req.header('cf-connecting-ip') ?? 'local'}`, 10, 60);
+    if (await one(c.env.DB, 'SELECT 1 FROM users WHERE phone = ?', phone)) {
+      throw conflict('telefone_em_uso', 'Este número já tem conta. Inicie sessão ou recupere a palavra-passe.');
+    }
+    const userId = uuid();
+    const now = nowIso();
+    await c.env.DB.batch([
+      c.env.DB.prepare('INSERT INTO users (id, phone, name, email, password_hash, phone_verified_at, consent_terms_at, consent_privacy_at) VALUES (?,?,?,?,?,?,?,?)').bind(
+        userId, phone, body.name, null, await hashPassword(body.password), null, now, now,
+      ),
+      c.env.DB.prepare("INSERT INTO user_roles (user_id, role) VALUES (?, 'customer')").bind(userId),
+    ]);
+    const session = await createSession(c.env.DB, userId, body.app);
+    return c.json({ ...session, user: { id: userId, name: body.name, phone, roles: ['customer'] } }, 201);
+  }
   await rateLimit(c.env.DB, `otp:${phone}`, 5, 60);
   await rateLimit(c.env.DB, `otp-mail:${email}`, 5, 60);
   await rateLimit(c.env.DB, `otp-ip:${c.req.header('cf-connecting-ip') ?? 'local'}`, 20, 60);
