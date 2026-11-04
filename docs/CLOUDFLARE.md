@@ -7,7 +7,19 @@ O LevaGo tem 2 partes na Cloudflare (conta `e05eeae53ace56c96df2f49e36c750a5`):
 | `levago-api` | Worker | A API. A base de dados continua no Neon (Postgres). |
 | `levago` | Pages | O site (Cliente, Estafeta e Admin). A APK abre este site. |
 
-Há 2 formas de publicar. Pode usar as duas.
+O site `levago` também tem a API dentro dele, em `/v1` (pasta `functions/`). Assim o site e a API usam o mesmo endereço, por exemplo `https://levago.pages.dev/v1/config`. O Worker `levago-api` só é preciso para a publicação manual pelo painel.
+
+## 0. Projecto Pages ligado ao GitHub (o mais simples)
+
+1. Cloudflare > Workers & Pages > Create > Pages > Connect to Git > repositório `Leva-Go-2.0`. Nome do projecto: `levago`.
+2. Production branch: `main`. Framework preset: `None`.
+3. Build command: `npm run build`. Build output directory: `web/dist`. Root directory: deixe vazio.
+4. Save and Deploy.
+5. Depois, em Settings > Variables and Secrets, junte os segredos (tipo Secret) `DATABASE_URL` e `RESEND_API_KEY`. Faça Retry deployment.
+
+As definições `nodejs_compat`, `ENVIRONMENT` e `CORS_ORIGINS` vêm do ficheiro `wrangler.toml` na raiz.
+
+Há mais 2 formas de publicar. Pode usar todas.
 
 ## 1. Publicação automática (GitHub)
 
@@ -66,5 +78,5 @@ Com Node 22, na pasta do projecto:
 npm install
 npx --prefix api wrangler login
 npm run deploy:api
-VITE_API_URL=https://levago-api.SEU-NOME.workers.dev npm run deploy:site
+npm run deploy:site
 ```

@@ -1,0 +1,13 @@
+# Site LevaGo 2.0 no Cloudflare Pages (projecto "levago"), com a API em /v1 (pasta functions/).
+# Definições do projecto ligado ao GitHub:
+#   Comando de construção: npm run build
+#   Pasta de saída: web/dist (lida daqui)
+# Segredos no painel do Pages (Settings > Variables and Secrets): DATABASE_URL, RESEND_API_KEY.
+name = "levago"
+pages_build_output_dir = "web/dist"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "production"
+CORS_ORIGINS = "https://levago.pages.dev"

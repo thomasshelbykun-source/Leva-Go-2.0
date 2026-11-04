@@ -11,6 +11,7 @@
     "test": "npm test -w api && npm run build -w web",
     "build": "npm run build -w web",
     "deploy:api": "npm run deploy -w api",
-    "deploy:site": "npm run build -w web && npx --prefix api wrangler pages deploy web/dist --project-name levago --branch main"
+    "deploy:site": "npm run build && wrangler pages deploy --branch main",
+    "dev:pages": "npm run build && wrangler pages dev"
   }
 }
