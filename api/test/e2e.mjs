@@ -5,6 +5,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { createHmac, randomBytes } from 'node:crypto';
 import pg from 'pg';
+import { unlinkSync, writeFileSync } from 'node:fs';
 
 const PORT = 8799;
 const BASE = `http://127.0.0.1:${PORT}/v1`;
@@ -56,16 +57,24 @@ async function main() {
   await adminSql(ADMIN_URL, `CREATE DATABASE ${DB_NAME}`);
   execFileSync('npx', ['tsx', 'scripts/migrate.ts', '--seed'], { stdio: 'pipe', env: { ...process.env, DATABASE_URL: dbUrl } });
 
-  const dev = spawn('npx', ['tsx', 'scripts/dev.ts'], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: true,
-    env: { ...process.env, DATABASE_URL: dbUrl, PORT: String(PORT), ENVIRONMENT: 'test', PAYMENTS_WEBHOOK_SECRET: 'segredo-teste', CORS_ORIGINS: 'http://localhost:5173' },
-  });
+  const vars = { DATABASE_URL: dbUrl, ENVIRONMENT: 'test', PAYMENTS_WEBHOOK_SECRET: 'segredo-teste', CORS_ORIGINS: 'http://localhost:5173' };
+  // E2E_RUNTIME=workers corre a API no runtime da Cloudflare (wrangler dev), como em produção.
+  const workers = process.env.E2E_RUNTIME === 'workers';
+  const envFile = `.e2e-${DB_NAME}.env`;
+  if (workers) writeFileSync(envFile, Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n'));
+  const dev = workers
+    ? spawn('npx', ['wrangler', 'dev', '--port', String(PORT), '--ip', '127.0.0.1', '--env-file', envFile], { stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+    : spawn('npx', ['tsx', 'scripts/dev.ts'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+        env: { ...process.env, ...vars, PORT: String(PORT) },
+      });
+  process.on('exit', () => { if (workers) try { unlinkSync(envFile); } catch {} });
   let log = '';
   dev.stdout.on('data', (d) => (log += d));
   dev.stderr.on('data', (d) => (log += d));
   try {
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 120; i++) {
       try { if ((await fetch(`http://127.0.0.1:${PORT}/`)).ok) break; } catch {}
       await new Promise((r) => setTimeout(r, 500));
     }

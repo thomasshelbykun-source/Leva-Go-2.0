@@ -2,7 +2,7 @@
 
 Plataforma de entregas de encomendas para Quelimane. Este repositório tem:
 
-- `api/`: a API (Hono na Vercel) e a base de dados Postgres no Neon. Os ficheiros privados ficam na própria base.
+- `api/`: a API (Hono num Cloudflare Worker) e a base de dados Postgres no Neon. Os ficheiros privados ficam na própria base.
 - `web/`: o site (PWA em React) com três áreas: Cliente (`/cliente`), Estafeta (`/estafeta`) e Admin (`/admin`).
 
 A versão Android (APK) vem depois, com Capacitor, a partir do mesmo site.
@@ -14,24 +14,10 @@ A versão Android (APK) vem depois, com Capacitor, a partir do mesmo site.
 - Estados da encomenda: AGUARDA_PAGAMENTO, PENDENTE_ATRIBUICAO, ATRIBUIDO, ACEITE, RECOLHIDO, EM_TRANSPORTE, ENTREGUE, e também CANCELADO, FALHA_ENTREGA, DEVOLUCAO_PENDENTE e DEVOLVIDO.
 - Os pagamentos M-Pesa e e-Mola estão simulados até haver as APIs oficiais. Em staging existe o método "Pagamento de teste (simulado)".
 
-## Publicar (Vercel e Neon)
+## Publicar (Cloudflare e Neon)
 
-A Vercel está ligada a este repositório e publica sozinha em cada envio para `main`. Há 2 projectos:
-
-| Projecto Vercel | Pasta (Root Directory) | O que é |
-| --- | --- | --- |
-| `levago-api` | `api` | A API. Framework: Hono. |
-| `levago` | `web` | O site. Framework: Vite. |
-
-Variáveis de ambiente do projecto `levago-api` (Settings > Environment Variables):
-
-- `DATABASE_URL`: o endereço "pooled" da base Neon `levago`. É um segredo: nunca o coloque no código.
-- `ENVIRONMENT`: `staging` (ou `production` quando entrar em produção).
-- `CORS_ORIGINS`: o endereço do site, por exemplo `https://levago.vercel.app`.
-- `CRON_SECRET`: um texto aleatório. A Vercel usa-o para chamar a limpeza diária.
-- `PAYMENTS_WEBHOOK_SECRET` (opcional): só quando houver um provedor de pagamentos real.
-
-Variável do projecto `levago`: `VITE_API_URL` = o endereço da API, sem `/` no fim.
+A API corre num Cloudflare Worker (`levago-api`) e o site no Cloudflare Pages (`levago`). A base de dados é o Postgres no Neon.
+Pode publicar sozinho pelo GitHub em cada envio para `main`, ou à mão no painel da Cloudflare. Os passos estão em [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md).
 
 ### Base de dados
 
@@ -45,7 +31,7 @@ DATABASE_URL='postgres://...' npm run db:seed      # zona e tarifa de teste (só
 
 ### Tarefas periódicas
 
-A API cancela pedidos por pagar, expira subscrições e limpa dados antigos. Corre no máximo a cada 15 minutos, depois de um pedido, e também 1 vez por dia pelo agendador da Vercel (`api/vercel.json`).
+A API cancela pedidos por pagar, expira subscrições e limpa dados antigos. Na Cloudflare corre a cada 15 minutos pelo agendador do Worker (`api/wrangler.toml`).
 
 ## Primeiro administrador
 
@@ -92,7 +78,7 @@ TEST_DATABASE_URL='postgres://postgres@localhost:5432/postgres' npm run test:e2e
 
 ## Segurança
 
-- Nunca coloque tokens ou chaves no código nem no repositório. Use apenas as variáveis de ambiente da Vercel.
+- Nunca coloque tokens ou chaves no código nem no repositório. Use apenas os segredos do GitHub e da Cloudflare.
 - As palavras-passe usam PBKDF2. As sessões guardam só o hash do token.
 - O PIN de pagamento nunca é guardado.
 - Os estados finais da encomenda não mudam. Todas as acções do Admin ficam na auditoria.
