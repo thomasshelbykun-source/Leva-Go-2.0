@@ -84,7 +84,7 @@ export function Welcome() {
           <Icon name="pin" size={20} /> Quelimane, Moçambique
         </p>
         <p className="wl-switch">
-          <Link to="/" reloadDocument={IN_APP}>Mudar de área</Link>
+          <Link to="/estafeta/boas-vindas" reloadDocument={IN_APP}>Mudar de área</Link>
         </p>
       </div>
     </div>

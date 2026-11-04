@@ -1,9 +1,8 @@
 import { IN_APP } from './shared/inapp';
 import { Component, lazy, StrictMode, Suspense, type ComponentType, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
-import { Icon } from './shared/brand';
-import { HeroSheet } from './shared/Hero';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { getToken } from './shared/api';
 import { Loading } from './shared/ui';
 import './styles.css';
 
@@ -84,40 +83,9 @@ function Legal({ kind }: { kind: 'termos' | 'privacidade' }) {
   );
 }
 
+/** A primeira página é Criar conta. Quem já tem sessão de cliente vai direto para o início. */
 function Landing() {
-  return (
-    <HeroSheet img="cliente">
-      <div className="hs-head">
-        <h1 className="hs-title">Escolha a sua área</h1>
-        <p className="hs-sub">Entregas rápidas e seguras em Quelimane, de bicicleta ou motorizada.</p>
-      </div>
-      <div className="choice-list">
-        <Link to="/cliente" reloadDocument={IN_APP} className="choice">
-          <span className="choice-icon">
-            <Icon name="box" size={26} />
-          </span>
-          <span className="choice-text">
-            <strong>Cliente</strong>
-            <small>Envie encomendas, pague e acompanhe a entrega.</small>
-          </span>
-          <span className="choice-go" aria-hidden="true">›</span>
-        </Link>
-        <Link to="/estafeta" reloadDocument={IN_APP} className="choice choice-alt">
-          <span className="choice-icon">
-            <Icon name="scooter" size={26} />
-          </span>
-          <span className="choice-text">
-            <strong>Estafeta</strong>
-            <small>Aceite pedidos, faça entregas e veja os seus ganhos.</small>
-          </span>
-          <span className="choice-go" aria-hidden="true">›</span>
-        </Link>
-      </div>
-      <p className="small center">
-        <Link to="/termos">Termos</Link> · <Link to="/privacidade">Privacidade</Link>
-      </p>
-    </HeroSheet>
-  );
+  return <Navigate to={getToken('cliente') ? '/cliente' : '/cliente/registo'} replace />;
 }
 
 createRoot(document.getElementById('root')!).render(
