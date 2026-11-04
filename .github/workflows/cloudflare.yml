@@ -53,15 +53,6 @@ jobs:
         working-directory: api
         run: npx wrangler deploy --dry-run --outdir ../pacotes/levago-api
 
-      - name: Apagar o projecto Pages antigo "levago-api" (pedido do dono em 2026-11-04)
-        if: steps.modo.outputs.auto == 'true'
-        working-directory: api
-        run: |
-          # O nome passa a ser do Worker da API. Se o projecto antigo já não existir, não faz nada.
-          if npx wrangler pages project list 2>/dev/null | grep -qw "levago-api"; then
-            npx wrangler pages project delete levago-api --yes
-          fi
-
       - name: Publicar a API
         id: api
         if: steps.modo.outputs.auto == 'true'
