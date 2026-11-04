@@ -74,7 +74,10 @@ jobs:
           # Endereço da API: o do Worker acabado de publicar, ou a variável LEVAGO_API_URL do repositório.
           VITE_API_URL: ${{ steps.api.outputs.url || vars.LEVAGO_API_URL }}
         run: |
-          if [ -z "$VITE_API_URL" ]; then echo "::error::Falta o endereço da API. Crie a variável LEVAGO_API_URL (Settings > Secrets and variables > Actions > Variables)."; exit 1; fi
+          if [ -z "$VITE_API_URL" ]; then
+            echo "::warning::Falta o endereço da API, por isso o pacote do site não foi gerado. Crie a variável LEVAGO_API_URL (Settings > Secrets and variables > Actions > Variables)."
+            exit 0
+          fi
           echo "API: $VITE_API_URL"
           npm run build -w web
           mkdir -p pacotes && cp -r web/dist pacotes/levago-site
@@ -90,6 +93,7 @@ jobs:
         with:
           name: levago-site
           path: pacotes/levago-site
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: levago-api
