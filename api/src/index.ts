@@ -66,7 +66,7 @@ app.use('*', async (c, next) => {
 app.use('*', async (c, next) => {
   const origins = c.env.CORS_ORIGINS.split(',').map((s) => s.trim());
   return cors({
-    origin: (o) => (origins.includes(o) || /^https:\/\/([a-z0-9-]+\.)?levago(-[a-z0-9-]+)?\.(pages\.dev|vercel\.app)$/.test(o) || o === 'capacitor://localhost' || o === 'https://localhost' ? o : origins[0]!),
+    origin: (o) => (origins.includes(o) || /^https:\/\/([a-z0-9-]+\.)?levago(-[a-z0-9-]+)?\.pages\.dev$/.test(o) || o === 'capacitor://localhost' || o === 'https://localhost' ? o : origins[0]!),
     allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     maxAge: 600,

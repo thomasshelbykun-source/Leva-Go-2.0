@@ -125,7 +125,7 @@ export function maskPhone(phone: string): string {
 }
 
 /** Ficheiros privados guardados na base de dados (tabela file_blobs). */
-export const MAX_FILE_BYTES = 4 * 1024 * 1024; // a Vercel aceita pedidos até 4,5 MB
+export const MAX_FILE_BYTES = 4 * 1024 * 1024; // limite de 4 MB por ficheiro
 
 export function files(env: Env) {
   return {

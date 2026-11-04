@@ -17,7 +17,7 @@ Também pode correr à mão: GitHub > Actions > Cloudflare > Run workflow.
 Configurar 1 vez, em GitHub > Settings > Secrets and variables > Actions > Secrets:
 
 1. `CLOUDFLARE_API_TOKEN`: crie em Cloudflare > My Profile > API Tokens > Create Token > modelo "Edit Cloudflare Workers". Junte a permissão "Cloudflare Pages: Edit".
-2. `DATABASE_URL`: o endereço "pooled" da base Neon `levago` (está nas definições da Vercel ou no painel do Neon).
+2. `DATABASE_URL`: o endereço "pooled" da base Neon `levago` (está no painel do Neon: Connection string, opção "Pooled connection").
 3. `RESEND_API_KEY`: a chave do Resend para os e-mails com códigos.
 4. `CRON_SECRET` (opcional): um texto aleatório para chamar a limpeza à mão.
 
