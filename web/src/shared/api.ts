@@ -1,7 +1,9 @@
 // Cliente HTTP da API LevaGo. Cada aplicação (cliente, estafeta, admin) tem a sua própria sessão.
 export type AppName = 'cliente' | 'estafeta' | 'admin';
 
-export const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? 'http://localhost:8787';
+// Endereço da API. Sem VITE_API_URL, o site publicado usa a API no mesmo endereço (/v1, pasta functions/).
+export const API_URL =
+  (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? (import.meta.env.DEV ? 'http://localhost:8787' : '');
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: Record<string, string> | null) {

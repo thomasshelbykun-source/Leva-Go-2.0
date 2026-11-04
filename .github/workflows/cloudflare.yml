@@ -1,4 +1,4 @@
-# Publica o LevaGo 2.0 na Cloudflare: a API num Worker (levago-api) e o site no Pages (levago).
+# Publica o LevaGo 2.0 na Cloudflare: o site e a API (em /v1) no Pages (levago), e a API também num Worker (levago-api).
 # Corre sozinho em cada envio para main. Também pode correr à mão: Actions > Cloudflare > Run workflow.
 # Em todos os casos gera 2 pacotes (Artifacts) para subir à mão no painel da Cloudflare:
 #   levago-site (pasta do site) e levago-api (worker.js). Ver docs/CLOUDFLARE.md.
@@ -69,25 +69,34 @@ jobs:
           url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' "$RUNNER_TEMP/api.log" | head -1)
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
-      - name: Construir o site
-        env:
-          # Endereço da API: o do Worker acabado de publicar, ou a variável LEVAGO_API_URL do repositório.
-          VITE_API_URL: ${{ steps.api.outputs.url || vars.LEVAGO_API_URL }}
-        run: |
-          if [ -z "$VITE_API_URL" ]; then
-            echo "::warning::Falta o endereço da API, por isso o pacote do site não foi gerado. Crie a variável LEVAGO_API_URL (Settings > Secrets and variables > Actions > Variables)."
-            exit 0
-          fi
-          echo "API: $VITE_API_URL"
-          npm run build -w web
-          mkdir -p pacotes && cp -r web/dist pacotes/levago-site
+      - name: Construir o site (com a API no mesmo endereço, pasta functions/)
+        run: npm run build
 
-      - name: Publicar o site
+      - name: Publicar o site e a API em /v1 (Pages)
         id: site
         if: steps.modo.outputs.auto == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          npx --prefix api wrangler pages project create levago --production-branch main 2>/dev/null || true
-          npx --prefix api wrangler pages deploy web/dist --project-name levago --branch main --commit-dirty=true | tee "$RUNNER_TEMP/site.log"
+          npx wrangler pages project create levago --production-branch main 2>/dev/null || true
+          node -e 'const s={};for(const k of ["DATABASE_URL","RESEND_API_KEY","CRON_SECRET"])if(process.env[k])s[k]=process.env[k];require("fs").writeFileSync(process.env.RUNNER_TEMP+"/secrets.json",JSON.stringify(s))'
+          npx wrangler pages secret bulk "$RUNNER_TEMP/secrets.json" --project-name levago || true
+          rm -f "$RUNNER_TEMP/secrets.json"
+          npx wrangler pages deploy --branch main --commit-dirty=true | tee "$RUNNER_TEMP/site.log"
+
+      - name: Pacote do site para subir à mão (usa a API do Worker)
+        env:
+          VITE_API_URL: ${{ steps.api.outputs.url || vars.LEVAGO_API_URL }}
+        run: |
+          # O painel do Pages (arrastar a pasta) não leva a pasta functions/, por isso este pacote chama o Worker.
+          if [ -z "$VITE_API_URL" ]; then
+            echo "::warning::Sem o endereço do Worker levago-api, o pacote levago-site não foi gerado. Crie a variável LEVAGO_API_URL (Settings > Secrets and variables > Actions > Variables)."
+            exit 0
+          fi
+          npm run build -w web
+          mkdir -p pacotes && cp -r web/dist pacotes/levago-site
 
       - uses: actions/upload-artifact@v4
         with:
@@ -104,8 +113,8 @@ jobs:
           {
             echo "## LevaGo na Cloudflare"
             if [ "${{ steps.modo.outputs.auto }}" = "true" ]; then
-              echo "- API: ${{ steps.api.outputs.url }}"
-              echo "- Site: https://levago.pages.dev"
+              echo "- Site e API: https://levago.pages.dev (API em /v1)"
+              echo "- API também no Worker: ${{ steps.api.outputs.url }}"
             else
               echo "Não publicado. Para subir à mão, descarregue os pacotes **levago-site** e **levago-api** em Artifacts (mais abaixo) e siga docs/CLOUDFLARE.md."
             fi

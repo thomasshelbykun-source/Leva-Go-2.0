@@ -55,6 +55,9 @@ export class Db {
 
   /** Fecha as ligações. Na Cloudflare cada pedido abre e fecha a sua própria pool. */
   async close() {
+    // Depois de fechar, a Cloudflare corta os sockets: esses erros já não interessam.
+    this.pool.removeAllListeners('error');
+    this.pool.on('error', () => undefined);
     await this.pool.end().catch(() => undefined);
   }
 
