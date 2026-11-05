@@ -54,10 +54,10 @@ export function useAction() {
 }
 
 // ------------------------------------------------------------------ Estrutura
-export function Page({ title, back, actions, children, wide }: { title: string; back?: string | true; actions?: ReactNode; children: ReactNode; wide?: boolean }) {
+export function Page({ title, back, actions, children, wide, className = '' }: { title: string; back?: string | true; actions?: ReactNode; children: ReactNode; wide?: boolean; className?: string }) {
   const nav = useNavigate();
   return (
-    <div className={wide ? 'page page-wide' : 'page'}>
+    <div className={`${wide ? 'page page-wide' : 'page'} ${className}`}>
       <header className="page-head">
         {back && (
           <button className="icon-btn" aria-label="Voltar" onClick={() => (back === true ? nav(-1) : nav(back))}>
