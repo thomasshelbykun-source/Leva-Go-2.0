@@ -29,8 +29,8 @@ class LevaGoApp extends StatelessWidget {
 
   /// Site publicado. Cliente, Estafeta e Admin estão no mesmo endereço.
   /// «app=android» diz ao site que está dentro da app (sem mapas).
-  static const siteUrl = 'https://levago-three.vercel.app/?app=android';
-  static const ownHosts = {'levago-three.vercel.app', 'levago-api.vercel.app'};
+  static const siteUrl = 'https://levago.pages.dev/?app=android';
+  static const ownHosts = {'levago.pages.dev'};
 
   @override
   Widget build(BuildContext context) {

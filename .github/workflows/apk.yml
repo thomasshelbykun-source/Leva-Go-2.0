@@ -52,6 +52,6 @@ jobs:
           prerelease: true
           body: |
             APK de teste da LevaGo (Cliente, Estafeta e Admin).
-            Abre o site https://levago-three.vercel.app dentro da app.
+            Abre o site https://levago.pages.dev dentro da app.
             Assinado com a chave de teste: não publicar na Play Store com esta versão.
           files: mobile/build/LevaGo-2.0.${{ github.run_number }}.apk
