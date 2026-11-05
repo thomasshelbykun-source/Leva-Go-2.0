@@ -1,5 +1,5 @@
 import { IN_APP } from './inapp';
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { setToken } from './api';
 import { Button, ErrorBox, Field, Notice, useAction } from './ui';
@@ -17,9 +17,10 @@ const AREA = { cliente: 'Cliente', estafeta: 'Estafeta', admin: 'Admin' } as con
  */
 function AuthPage({ variant, title, sub, children }: { variant: 'photo' | 'navy'; title: string; sub?: string; children: React.ReactNode }) {
   const s = useSession();
+  const ref = useFitScreen();
   return (
     <div className={`au au-${variant} au-${s.app}`}>
-      <div className="au-inner">
+      <div className="au-inner" ref={ref}>
         <header className="au-head">
           <div className="au-bar">
             <button type="button" className="au-back" aria-label="Voltar" onClick={() => history.back()}>
@@ -44,6 +45,50 @@ function AuthPage({ variant, title, sub, children }: { variant: 'photo' | 'navy'
       </div>
     </div>
   );
+}
+
+/**
+ * No telemóvel a página tem de caber num só ecrã, sem rolar.
+ * Se o conteúdo for mais alto do que o ecrã, reduz tudo por igual (zoom) até caber.
+ */
+function useFitScreen() {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let last = 0;
+    const fit = () => {
+      const st = el.style as CSSStyleDeclaration & { zoom: string };
+      const vh = window.innerHeight;
+      if (window.innerWidth >= 760) {
+        st.zoom = '';
+        st.minHeight = '';
+        last = 1;
+        return;
+      }
+      st.zoom = '1';
+      st.minHeight = '0';
+      const natural = el.scrollHeight;
+      const z = Math.max(0.6, Math.min(1, vh / natural));
+      st.zoom = z < 1 ? String(z) : '';
+      st.minHeight = `${vh / z}px`;
+      last = z;
+    };
+    fit();
+    const ro = new ResizeObserver(() => {
+      const prev = last;
+      fit();
+      if (Math.abs(prev - last) < 0.005) return;
+    });
+    const form = el.querySelector('.au-card');
+    if (form) ro.observe(form);
+    window.addEventListener('resize', fit);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', fit);
+    };
+  }, []);
+  return ref;
 }
 
 /** Campo com ícone à esquerda, como nos mockups. */

@@ -657,3 +657,32 @@ ul.plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.35rem;
   .au-photo .au-inner { padding-bottom: 4rem; }
   .au-card { padding-left: 1.5rem; padding-right: 1.5rem; }
 }
+
+/* Telemóvel: Criar conta e Entrar cabem num só ecrã (2026-11-05) */
+@media (max-width: 759px) {
+  .au-head { padding-top: calc(env(safe-area-inset-top) + 0.25rem); }
+  .au-bar { min-height: 50px; }
+  .au-navy .au-head { padding-bottom: 2rem; }
+  .au-navy .au-titles { margin-top: 0.1rem; }
+  .au-navy .au-titles h1 { font-size: clamp(1.6rem, 7.4vw, 2.1rem); }
+  .au-navy .au-titles p { font-size: clamp(0.82rem, 3.6vw, 0.95rem); }
+  .au-box { top: calc(env(safe-area-inset-top) + 3.4rem); width: 27%; }
+  .au-photo .au-head { min-height: calc(min(100vw, 520px) * 0.58); padding-bottom: 1.8rem; }
+  .au-card { padding: 1rem 0.95rem 1.1rem; }
+  .au-form { gap: 0.75rem; }
+  .au-field { grid-template-columns: 1.9rem 1fr; column-gap: 0.45rem; }
+  .au-field-icon svg { width: 24px; height: 24px; }
+  .au-field-body { gap: 0.3rem; }
+  .au-label { font-size: 0.95rem; }
+  .au-hint { font-size: 0.72rem; gap: 0.3rem; }
+  .au-hint .icon { width: 15px; height: 15px; }
+  .au input:not([type='checkbox']) { min-height: 46px; font-size: 0.95rem; }
+  .au .phone-prefix { min-height: 46px; font-size: 1rem; }
+  .au .flag-mz { width: 26px; height: 17px; }
+  .au-check { font-size: 0.95rem; gap: 0.7rem; }
+  .au-check input[type='checkbox'] { width: 22px; height: 22px; min-height: 22px; }
+  .au-submit { min-height: 52px; font-size: 1.2rem; margin-top: 0.1rem; }
+  .au-forgot, .au-alt { font-size: 0.95rem; }
+  .au-area { padding: 0.55rem 0.6rem; font-size: 0.8rem; margin-top: 0; }
+  .au-photo .au-inner { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); }
+}
