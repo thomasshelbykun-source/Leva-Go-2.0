@@ -2,7 +2,7 @@ import { IN_APP } from '../shared/inapp';
 import { HeroSheet } from '../shared/Hero';
 import { Fragment, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Avatar, Icon, Logo } from '../shared/brand';
+import { Avatar, Icon, Logo, type IconName } from '../shared/brand';
 import { useConfig } from '../shared/config';
 import { dateTime, mt, SERVICE, WEEKDAYS } from '../shared/format';
 import { useSession } from '../shared/session';
@@ -92,77 +92,120 @@ export function Welcome() {
 }
 
 // ------------------------------------------------------------------ Início
-/** Cliente novo ou sem saldo vê os planos. Cliente com plano vê o saldo e as 3 acções principais. */
+const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+/** "20 Dez 2026", na hora de Maputo. */
+function shortDate(iso: string) {
+  const d = new Date(new Date(iso).getTime() + 2 * 3_600_000);
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/** Topo azul do Início: logótipo, slogan e notificações. */
+function HomeTop({ unread }: { unread: number }) {
+  return (
+    <header className="cx-top">
+      <Logo size={30} light slogan />
+      <Link to="/cliente/notificacoes" className="cx-bell" aria-label={`Notificações${unread ? `: ${unread} por ler` : ''}`}>
+        <Icon name="bell" size={28} />
+        {unread > 0 && <span className="cx-bell-n">{unread > 9 ? '9+' : unread}</span>}
+      </Link>
+    </header>
+  );
+}
+
+/** Linha de acção: ícone, título, subtítulo e seta. */
+function ActionRow({ to, icon, title, sub, primary }: { to: string; icon: IconName; title: string; sub: string; primary?: boolean }) {
+  return (
+    <Link to={to} className={`cx-row ${primary ? 'cx-row-primary' : ''}`}>
+      <span className="cx-row-icon"><Icon name={icon} size={30} /></span>
+      <span className="cx-row-text">
+        <strong>{title}</strong>
+        <small>{sub}</small>
+      </span>
+      <Icon name="chevronRight" size={20} />
+    </Link>
+  );
+}
+
+function ShortcutTile({ to, icon, label, accent }: { to: string; icon: IconName; label: string; accent?: boolean }) {
+  return (
+    <Link to={to} className={`cx-tile ${accent ? 'cx-tile-accent' : ''}`}>
+      <Icon name={icon} size={30} />
+      <strong>{label}</strong>
+    </Link>
+  );
+}
+
+/** Cliente novo ou sem saldo vê os planos. Cliente com plano vê o saldo e as acções principais. */
 export function Home() {
   const { api } = useSession();
   const cfg = useConfig();
   const q = useLoad(() => api.get('/home'), [], 20_000);
   return (
-    <Page title="Início">
-      <Loaded q={q}>
-        {(h) => (
-          <div className="stack">
-            <div className="greet">
-              <Avatar name={h.name} />
-              <div>
-                <h2>Olá, {String(h.name).split(' ')[0]}!</h2>
-                <small>O que desejas fazer hoje?</small>
-              </div>
-            </div>
-            {cfg && !cfg.open_now && <Notice tone="warn">Estamos fora do horário. Podes agendar uma entrega.</Notice>}
-            {h.active_order && (
-              <Card onClick={() => (location.href = `/cliente/encomendas/${h.active_order.id}`)}>
-                <small>Encomenda em curso</small>
-                <div className="row-between">
-                  <strong>{h.active_order.code}</strong>
-                  <StatusBadge status={h.active_order.status} />
-                </div>
-              </Card>
-            )}
-            {h.needs_plan ? <HomeNoPlan h={h} /> : <HomeWithPlan h={h} />}
-          </div>
-        )}
-      </Loaded>
-    </Page>
+    <div className="cx">
+      <HomeTop unread={q.data?.unread_notifications ?? 0} />
+      <div className="cx-sheet">
+        <Loaded q={q}>
+          {(h) => (
+            <>
+              {cfg && !cfg.open_now && <Notice tone="warn">Estamos fora do horário. Podes agendar uma entrega.</Notice>}
+              {h.needs_plan ? <HomeNoPlan h={h} /> : <HomeWithPlan h={h} />}
+            </>
+          )}
+        </Loaded>
+      </div>
+    </div>
+  );
+}
+
+function ActiveOrder({ o }: { o: any }) {
+  if (!o) return null;
+  return (
+    <Link to={`/cliente/encomendas/${o.id}`} className="cx-card cx-active">
+      <small>Encomenda em curso</small>
+      <span className="row-between">
+        <strong>{o.code}</strong>
+        <StatusBadge status={o.status} />
+      </span>
+    </Link>
   );
 }
 
 function HomeWithPlan({ h }: { h: any }) {
   const s = h.subscription;
-  const pct = Math.round((s.remaining / Math.max(1, s.total)) * 100);
   return (
     <>
-      <div className="plan-balance">
-        <div className="row-between">
-          <span>Plano {s.plan_name}</span>
-          <span className="pill-ok">Activo</span>
+      <div className="cx-hello">
+        <Avatar name={h.name} />
+        <div className="cx-hello-text">
+          <h2>Olá, {String(h.name).split(' ')[0]}!</h2>
+          <p className="cx-hello-plan">Plano {s.plan_name}</p>
         </div>
-        <div className="plan-count">
-          <strong>{s.remaining}</strong> de {s.total} encomendas disponíveis
-        </div>
-        <div className="plan-bar">
-          <span style={{ width: `${pct}%` }} />
-        </div>
-        <small>Válido até {dateTime(s.period_end).split(',')[0]}</small>
-        {h.express_credits > 0 && <small className="credit">Tens {h.express_credits} crédito(s) expresso(s).</small>}
+        <span className="cx-pill-ok">Activo</span>
       </div>
-      <Link to="/cliente/nova" className="action-big">
-        <Icon name="box" size={26} /> Enviar encomenda
+      <Link to="/cliente/planos" className="cx-card cx-balance">
+        <span className="cx-row-icon cx-orange"><Icon name="box" size={34} /></span>
+        <span className="cx-row-text">
+          <strong>{s.remaining} de {s.total} encomendas</strong>
+          <small>Válido até: {shortDate(s.period_end)}</small>
+        </span>
+        <Icon name="chevronRight" size={20} />
       </Link>
-      <Link to="/cliente/nova?tipo=recolha" className="action-big action-navy">
-        <Icon name="scooter" size={26} /> Pedir recolha
-        <small>Restaurante, farmácia, loja ou mercado</small>
-      </Link>
-      <Link to={h.active_order ? `/cliente/encomendas/${h.active_order.id}` : '/cliente/encomendas'} className="action-big action-light">
-        <Icon name="search" size={24} /> Acompanhar entrega
-      </Link>
-      <div className="grid-2">
-        <Link to="/cliente/encomendas" className="tile">
-          <Icon name="list" /> Histórico
-        </Link>
-        <Link to="/cliente/planos" className="tile">
-          <Icon name="tag" /> Meu plano
-        </Link>
+      {h.express_credits > 0 && <small className="cx-note">Tens {h.express_credits} crédito(s) expresso(s).</small>}
+      <ActiveOrder o={h.active_order} />
+      <h3 className="cx-h">O que desejas fazer?</h3>
+      <div className="cx-rows">
+        <ActionRow to="/cliente/nova" icon="boxSend" title="Enviar encomenda" sub="Pedir um estafeta para entrega" primary />
+        <ActionRow to="/cliente/nova?tipo=recolha" icon="bag" title="Pedir recolha" sub="Restaurante, farmácia ou loja" />
+        <ActionRow
+          to={h.active_order ? `/cliente/encomendas/${h.active_order.id}` : '/cliente/encomendas'}
+          icon="truck"
+          title="Acompanhar entrega"
+          sub="Ver o estado da tua encomenda"
+        />
+      </div>
+      <div className="cx-tiles">
+        <ShortcutTile to="/cliente/planos" icon="tag" label="Planos de subscrição" accent />
+        <ShortcutTile to="/cliente/apoio" icon="help" label="Preciso de ajuda" />
       </div>
     </>
   );
@@ -172,28 +215,26 @@ function HomeNoPlan({ h }: { h: any }) {
   const ended = !!h.subscription;
   return (
     <>
-      {ended ? (
-        <Notice tone="warn">
-          O teu plano {h.subscription.plan_name} já não tem encomendas disponíveis. Escolhe um plano para continuar a enviar sem pagar cada entrega.
-        </Notice>
-      ) : (
-        <div className="promo">
-          <strong>Envia mais, paga menos.</strong>
-          <small>Escolhe um plano e envia encomendas Normais sem pagar cada entrega.</small>
+      <div className="cx-hello">
+        <Avatar name={h.name} />
+        <div className="cx-hello-text">
+          <h2>Olá, {String(h.name).split(' ')[0]}!</h2>
+          <p>{ended ? `O teu plano ${h.subscription.plan_name} já não tem encomendas disponíveis.` : 'Ainda não tens um plano activo.'}</p>
         </div>
-      )}
-      <PlanGrid plans={h.plans} recommended={h.recommended_plan_id} supplement={h.express_supplement_cents} />
-      <Link to="/cliente/nova" className="action-big action-light">
-        <Icon name="box" size={24} /> Enviar sem plano (pagar por entrega)
-      </Link>
-      <div className="grid-2">
-        <Link to="/cliente/encomendas" className="tile">
-          <Icon name="search" /> Acompanhar entrega
-        </Link>
-        <Link to="/cliente/apoio" className="tile">
-          <Icon name="chat" /> Ajuda e suporte
-        </Link>
       </div>
+      <div className="cx-promo">
+        <Icon name="tag" size={30} />
+        <span>Escolhe um plano e começa a enviar encomendas com a LevaGo.</span>
+      </div>
+      <ActiveOrder o={h.active_order} />
+      <PlanGrid plans={h.plans} recommended={h.recommended_plan_id} supplement={h.express_supplement_cents} />
+      <div className="cx-tiles">
+        <ShortcutTile to={h.active_order ? `/cliente/encomendas/${h.active_order.id}` : '/cliente/encomendas'} icon="truck" label="Acompanhar entrega" />
+        <ShortcutTile to="/cliente/apoio" icon="help" label="Preciso de ajuda" />
+      </div>
+      <Link to="/cliente/nova" className="cx-textlink">
+        Enviar sem plano (pagar por entrega)
+      </Link>
     </>
   );
 }
@@ -205,30 +246,33 @@ export function PlanGrid({ plans, recommended, supplement }: { plans: any[]; rec
   const a = useAction();
   if (!plans?.length) return <Empty title="Sem planos publicados" text="Os planos ainda não estão disponíveis." />;
   return (
-    <div className="stack">
-      <h3>Planos de subscrição</h3>
-      <div className="plan-grid">
+    <div className="cx-plans">
+      <h3 className="cx-h">Planos de subscrição</h3>
+      <div className="cx-plan-grid">
         {plans.map((p) => (
-          <div key={p.id} className={`plan-card ${p.id === recommended ? 'recommended' : ''}`}>
-            {p.id === recommended && <span className="plan-flag">Recomendado</span>}
-            <strong className="plan-name">{p.name}</strong>
-            <div className="plan-price">{mt(p.price_cents)}</div>
-            <div className="plan-qty">{p.deliveries_included} encomendas</div>
-            <small>Válido {p.period_days} dias</small>
-            <Button
-              kind={p.id === recommended ? 'primary' : 'secondary'}
-              busy={a.busy}
+          <div key={p.id} className={`cx-plan ${p.id === recommended ? 'cx-plan-rec' : ''}`}>
+            {p.id === recommended && <span className="cx-plan-flag">Recomendado</span>}
+            <span className="cx-plan-name">
+              <Icon name="box" size={22} /> {p.name}
+            </span>
+            <span className="cx-plan-price">{mt(p.price_cents)}</span>
+            <span className="cx-plan-qty">{p.deliveries_included} encomendas</span>
+            <span className="cx-plan-days">Válido por {p.period_days} dias</span>
+            <button
+              type="button"
+              className={`cx-btn ${p.id === recommended ? 'cx-btn-primary' : ''}`}
+              disabled={a.busy}
               onClick={async () => {
                 const s = await a.run(() => api.post<{ id: string }>('/subscriptions', { plan_id: p.id }));
                 if (s) nav(`/cliente/pagar-plano/${s.id}`);
               }}
             >
-              Contratar
-            </Button>
+              {a.busy ? 'Aguarde…' : 'Contratar'}
+            </button>
           </div>
         ))}
       </div>
-      <small className="center">Normal: sem custo adicional. Expressa: +{mt(supplement ?? 15000)} por encomenda.</small>
+      <small className="cx-note center">Normal: sem custo adicional. Expressa: +{mt(supplement ?? 15000)} por encomenda.</small>
       <ErrorBox error={a.error} />
     </div>
   );

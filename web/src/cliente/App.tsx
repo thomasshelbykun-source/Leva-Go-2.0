@@ -1,4 +1,4 @@
-import { NavLink, Outlet, Route, Routes } from 'react-router-dom';
+import { NavLink, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { Icon, type IconName } from '../shared/brand';
 import { Login, Register, ResetPassword } from '../shared/Auth';
 import { RequireAuth, SessionProvider } from '../shared/session';
@@ -19,8 +19,10 @@ const TABS: [string, IconName, string][] = [
 ];
 
 function Shell() {
+  // Em "Nova encomenda" o botão Continuar fica em baixo, sem a barra de navegação.
+  const full = useLocation().pathname.startsWith(`${BASE}/nova`);
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${full ? 'app-shell-full' : ''}`}>
       <main>
         <Outlet />
       </main>

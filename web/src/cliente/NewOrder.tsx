@@ -4,9 +4,10 @@ import { newIdempotencyKey } from '../shared/api';
 import { useConfig } from '../shared/config';
 import { CATEGORIES, km, minutes, mt, todayMaputo } from '../shared/format';
 import { MapView } from '../shared/map';
+import { Icon } from '../shared/brand';
 import { useSession } from '../shared/session';
 import { Button, Card, ErrorBox, Field, KV, Notice, Page, useAction, useLoad } from '../shared/ui';
-import { LocationPicker, type Point } from './LocationPicker';
+import { AddressField, SavedAddresses, type Point, type Preset } from './LocationPicker';
 
 interface Quote {
   quote_id: string;
@@ -43,6 +44,7 @@ export function NewOrder() {
   const [est, setEst] = useState({ establishment_type: 'restaurante', establishment_name: '', order_ref: '', paid_confirmed: false });
   const [pickup, setPickup] = useState<Point | null>(null);
   const [dropoff, setDropoff] = useState<Point | null>(null);
+  const [preset, setPreset] = useState<{ pickup: Preset | null; dropoff: Preset | null }>({ pickup: null, dropoff: null });
   // Na recolha, a entrega é para o próprio cliente: os dados vêm preenchidos.
   const [d, setD] = useState({
     weight_kg: recolha ? '2' : '', category: recolha ? 'compras' : 'documentos', description: '',
@@ -126,11 +128,12 @@ export function NewOrder() {
   const detailsOk = d.declaration && qty >= 1 && qty <= 50 && valueOk && weight > 0 && weight <= maxKg && d.description.trim().length >= 3 && d.recipient_name.trim().length >= 2 && d.recipient_phone.trim().length >= 9;
 
   return (
-    <Page title={recolha ? 'Pedir recolha' : 'Nova encomenda'} back="/cliente">
-      <ol className="steps">
+    <Page title={recolha ? 'Pedir recolha' : 'Nova encomenda'} back="/cliente" className="page-cx">
+      <ol className="cx-steps">
         {STEPS.map(([k, l], i) => (
           <li key={k} className={k === step ? 'current' : STEPS.findIndex((s) => s[0] === step) > i ? 'done' : ''}>
-            {l}
+            <span className="cx-step-n">{i + 1}</span>
+            <span className="cx-step-l">{l}</span>
           </li>
         ))}
       </ol>
@@ -163,17 +166,19 @@ export function NewOrder() {
       )}
 
       {step === 'locais' && (
-        <div className="stack">
-          <Card>
-            <LocationPicker label={recolha ? 'Endereço do estabelecimento' : 'Recolha (A)'} kind="pickup" value={pickup} onChange={setPickup} />
-          </Card>
-          <Card>
-            <LocationPicker label={recolha ? 'Onde entregamos' : 'Entrega (B)'} kind="dropoff" value={dropoff} onChange={setDropoff} />
-          </Card>
-          <Notice>Entregamos em toda a cidade de Quelimane.</Notice>
-          <Button disabled={!pickup || !dropoff} onClick={() => setStep('detalhes')}>
-            Continuar
-          </Button>
+        <div className="ad-step">
+          <AddressField
+            question={recolha ? 'Onde fica o estabelecimento?' : 'Onde recolher a encomenda?'}
+            placeholder={recolha ? 'Introduz o endereço do estabelecimento' : 'Introduz o endereço de recolha'}
+            kind="pickup"
+            onChange={setPickup}
+            preset={preset.pickup}
+          />
+          <AddressField question="Onde entregar?" placeholder="Introduz o endereço de entrega" kind="dropoff" onChange={setDropoff} preset={preset.dropoff} />
+          <SavedAddresses onPick={(k, a) => setPreset((p) => ({ ...p, [k]: { ...a, n: Date.now() } }))} />
+          <button type="button" className="cx-continue" disabled={!pickup || !dropoff} onClick={() => setStep('detalhes')}>
+            Continuar <Icon name="arrowRight" size={26} />
+          </button>
         </div>
       )}
 
