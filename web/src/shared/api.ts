@@ -75,7 +75,10 @@ export function api(app: AppName) {
       data = text;
     }
     if (!res.ok) {
-      throw new ApiError(res.status, data?.error ?? 'erro', data?.message ?? 'Ocorreu um erro. Tente de novo.', data?.details ?? null);
+      // Erros do servidor levam o código, para se saber de onde vêm (500 = API; 502/503/1102 = Cloudflare sem resposta da API).
+      const cf = typeof data === 'string' ? data.match(/error code:? *(\d{4})/i)?.[1] : undefined;
+      const ref = res.status >= 500 ? ` (código ${cf ?? res.status}${data?.ref ? ` · ${data.ref}` : ''})` : '';
+      throw new ApiError(res.status, data?.error ?? 'erro', (data?.message ?? 'Ocorreu um erro. Tente de novo.') + ref, data?.details ?? null);
     }
     return data as T;
   }

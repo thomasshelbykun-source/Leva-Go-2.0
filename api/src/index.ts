@@ -90,7 +90,8 @@ app.onError((err, c) => {
   if (err instanceof ApiError) return c.json({ error: err.code, message: err.message, details: err.details ?? null }, err.status as 400);
   if (err instanceof SyntaxError) return c.json({ error: 'json_invalido', message: 'Pedido mal formado.' }, 400);
   console.error(err);
-  return c.json({ error: 'erro_interno', message: 'Ocorreu um erro. Tente de novo.' }, 500);
+  // ref: só o tipo do erro (sem dados), para o ecrã mostrar de onde vem a falha.
+  return c.json({ error: 'erro_interno', message: 'Ocorreu um erro. Tente de novo.', ref: err instanceof Error ? err.name : 'erro' }, 500);
 });
 
 app.get('/', (c) => c.json({ service: 'levago-api', version: '2.0.0' }));
