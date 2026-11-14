@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { sendEmailCode } from '../lib/adapters.js';
 import { addMinutes, ApiError, bad, conflict, need, normalizePhone, nowIso, one, parseJson, run, uuid, v, type AppName, type Env, type Role, type Vars } from '../lib/core.js';
-import { hashPassword, passwordProblem, randomDigits, sha256, verifyPassword } from '../lib/crypto.js';
+import { hashPassword, needsRehash, passwordProblem, randomDigits, sha256, verifyPassword } from '../lib/crypto.js';
 import { auditStmt, createSession, rateLimit, requireRole } from '../lib/services.js';
 
 const auth = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -136,6 +136,8 @@ auth.post('/login', async (c) => {
   if (body.app === 'admin' && !APP_ROLES.admin.some((r) => roles.includes(r)))
     throw new ApiError(403, 'sem_acesso_admin', 'Esta conta não tem acesso ao painel administrativo. Use a área de Cliente ou de Estafeta.');
   await run(c.env.DB, 'UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?', u.id);
+  // Contas antigas (100 000 iterações) passam ao valor actual no primeiro Entrar certo, para os seguintes caberem no limite de CPU.
+  if (needsRehash(u.password_hash)) await run(c.env.DB, 'UPDATE users SET password_hash = ? WHERE id = ?', await hashPassword(body.password), u.id);
   // O Admin não tem entrada própria na página inicial: entra pelo login de Estafeta e vai para o painel.
   const app: AppName = body.app === 'estafeta' && APP_ROLES.admin.some((r) => roles.includes(r)) ? 'admin' : body.app;
   if (app === 'admin') await c.env.DB.batch([auditStmt(c.env.DB, { id: u.id, role: 'admin' }, 'login', 'session', null)]);

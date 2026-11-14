@@ -4,6 +4,7 @@ import {
   type HoursRow, type LonLat,
 } from '../src/lib/domain.js';
 import { normalizePhone } from '../src/lib/core.js';
+import { hashPassword, needsRehash, verifyPassword } from '../src/lib/crypto.js';
 
 // Horário aprovado (secção 0): dom–qui 07–22, sex 07–16, sáb 17–22.
 const HOURS: HoursRow[] = [
@@ -126,6 +127,24 @@ describe('Remuneração e telefones', () => {
   it('normaliza telemóveis de Moçambique', () => {
     expect(normalizePhone('84 123 4567')).toBe('+258841234567');
     expect(normalizePhone('+258 86 123 4567')).toBe('+258861234567');
+    expect(normalizePhone('00258 84 123 4567')).toBe('+258841234567');
     expect(normalizePhone('21123456')).toBeNull();
+  });
+});
+
+describe('palavra-passe', () => {
+  it('cabe no limite de CPU e verifica contas antigas', async () => {
+    const h = await hashPassword('abc12345');
+    expect(h.startsWith('pbkdf2$20000$')).toBe(true);
+    expect(needsRehash(h)).toBe(false);
+    expect(await verifyPassword('abc12345', h)).toBe(true);
+    expect(await verifyPassword('errada123', h)).toBe(false);
+    // Hash antigo com 100 000 iterações continua a entrar e é marcado para recalcular.
+    const salt = new Uint8Array(16);
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('abc12345'), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 100_000 }, key, 256);
+    const old = ['pbkdf2', '100000', btoa(String.fromCharCode(...salt)), btoa(String.fromCharCode(...new Uint8Array(bits)))].join('$');
+    expect(await verifyPassword('abc12345', old)).toBe(true);
+    expect(needsRehash(old)).toBe(true);
   });
 });

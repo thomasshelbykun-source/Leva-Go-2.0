@@ -8,7 +8,10 @@ const toB64 = (buf: ArrayBuffer | Uint8Array) => {
 };
 const fromB64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
-const PBKDF2_ITERATIONS = 100_000; // limite do runtime dos Workers
+// No plano gratuito da Cloudflare cada pedido tem cerca de 10 ms de CPU. Com 100 000 iterações só o
+// cálculo da palavra-passe passava esse limite e o Entrar falhava com erro 1102 (página de erro em vez de JSON).
+// 20 000 iterações cabem no limite; o bloqueio após 5 tentativas e o limite por número protegem contra adivinhação.
+const PBKDF2_ITERATIONS = 20_000;
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -21,6 +24,12 @@ export async function verifyPassword(password: string, stored: string): Promise<
   if (scheme !== 'pbkdf2' || !iter || !salt || !hash) return false;
   const got = await pbkdf2(password, fromB64(salt), Number(iter));
   return timingSafeEqual(toB64(got), hash);
+}
+
+/** Verdadeiro quando a palavra-passe foi guardada com outro número de iterações e deve ser recalculada. */
+export function needsRehash(stored: string): boolean {
+  const [scheme, iter] = stored.split('$');
+  return scheme !== 'pbkdf2' || Number(iter) !== PBKDF2_ITERATIONS;
 }
 
 async function pbkdf2(password: string, salt: Uint8Array<ArrayBuffer>, iterations: number) {
