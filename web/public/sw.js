@@ -17,6 +17,8 @@ function cacheable(res) {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
+  // O protótipo (/prototipo/) é uma página à parte: não substitui a casca da aplicação.
+  if (url.pathname.startsWith('/prototipo')) return;
   if (e.request.mode === 'navigate') {
     // Rede primeiro. A última página que abriu bem fica guardada para quando não há rede.
     e.respondWith(

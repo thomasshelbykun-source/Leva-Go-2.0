@@ -111,11 +111,12 @@ export const v = {
   lon: () => (x: unknown) => (typeof x === 'number' && x >= -180 && x <= 180 ? null : 'Longitude inválida.'),
 };
 
-/** Normaliza para +258 8X XXX XXXX. Aceita 84..., 25884..., +25884... */
+/** Normaliza para +258 8X XXX XXXX. Aceita 84..., 25884..., +25884... e 0025884... */
 export function normalizePhone(raw: string): string | null {
   const digits = raw.replace(/[^\d]/g, '');
   let local = digits;
-  if (local.startsWith('258') && local.length === 12) local = local.slice(3);
+  if (local.startsWith('00258') && local.length === 14) local = local.slice(5);
+  else if (local.startsWith('258') && local.length === 12) local = local.slice(3);
   if (!/^8[2-7]\d{7}$/.test(local)) return null;
   return `+258${local}`;
 }
