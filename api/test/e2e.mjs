@@ -6,6 +6,8 @@ import { spawn, execFileSync } from 'node:child_process';
 import { createHmac, randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { unlinkSync, writeFileSync } from 'node:fs';
+import { testarFuncoes } from './funcoes.mjs';
+import { SCREEN_ORIGIN, testarEcras } from './ecras.mjs';
 
 const PORT = 8799;
 const BASE = `http://127.0.0.1:${PORT}/v1`;
@@ -57,7 +59,7 @@ async function main() {
   await adminSql(ADMIN_URL, `CREATE DATABASE ${DB_NAME}`);
   execFileSync('npx', ['tsx', 'scripts/migrate.ts', '--seed'], { stdio: 'pipe', env: { ...process.env, DATABASE_URL: dbUrl } });
 
-  const vars = { DATABASE_URL: dbUrl, ENVIRONMENT: 'test', PAYMENTS_WEBHOOK_SECRET: 'segredo-teste', CORS_ORIGINS: 'http://localhost:5173' };
+  const vars = { DATABASE_URL: dbUrl, ENVIRONMENT: 'test', PAYMENTS_WEBHOOK_SECRET: 'segredo-teste', CORS_ORIGINS: `http://localhost:5173,${SCREEN_ORIGIN}` };
   // E2E_RUNTIME=workers corre a API no runtime da Cloudflare (wrangler dev), como em produção.
   const workers = process.env.E2E_RUNTIME === 'workers';
   const envFile = `.e2e-${DB_NAME}.env`;
@@ -356,6 +358,13 @@ async function main() {
     ok(p_bad1.status === 400, 'recolha exige os dados do estabelecimento');
     const p_or1 = await api('POST', '/orders', { token: pc.token, body: { ...orderBody, quote_id: p_qr.data.quote_id, payment_method: 'subscricao', order_kind: 'recolha', pickup_details: { establishment_type: 'farmacia', establishment_name: 'Farmácia Central', order_ref: 'F-12', paid_confirmed: true } }, idem: 'pedido-p004' });
     ok(p_or1.status === 201 && p_or1.data.order_kind === 'recolha' && p_or1.data.pickup_details.establishment_name === 'Farmácia Central', '«Pedir recolha» criado com o plano');
+
+    console.log('Testes por função e por ecrã');
+    const ids = await testarFuncoes({ api, ok, register, login, photo, adminSql, dbUrl, adminToken, admin2Token, cli, winner, orderId, orderBody, pc, BASE });
+    if (process.env.E2E_SCREENS !== '0') {
+      console.log('Testes de ecrã (browser)');
+      await testarEcras({ ok, api, apiOrigin: `http://127.0.0.1:${PORT}`, cli, winner, adminToken, orderId, ...ids });
+    }
   } catch (e) {
     failures++;
     console.error(e);

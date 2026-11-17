@@ -371,7 +371,72 @@ export function Zones() {
           </div>
         )}
       </Loaded>
+      <BairrosAdmin />
     </Page>
+  );
+}
+
+/** Bairros que o cliente pode escrever. O ponto central entra no cálculo da distância e do preço. */
+function BairrosAdmin() {
+  const { api } = useSession();
+  const q = useLoad(() => api.get<any[]>('/admin/bairros'), []);
+  const empty = { id: '', name: '', lat: '', lon: '', active: true };
+  const [edit, setEdit] = useState<typeof empty | null>(null);
+  const [reason, setReason] = useState('');
+  const a = useAction();
+  const lat = Number(String(edit?.lat ?? '').replace(',', '.'));
+  const lon = Number(String(edit?.lon ?? '').replace(',', '.'));
+  const valid = !!edit && edit.name.trim().length >= 2 && lat >= -27 && lat <= -10 && lon >= 30 && lon <= 41 && reason.trim().length >= 3;
+  return (
+    <Card className="stack">
+      <div className="row-between">
+        <h3>Bairros ({q.data?.filter((b) => b.active).length ?? 0} activos)</h3>
+        <Button kind="secondary" onClick={() => { setEdit(empty); setReason(''); }}>Novo bairro</Button>
+      </div>
+      <Notice>O cliente escolhe a recolha e a entrega pelo nome do bairro. A distância é calculada entre os pontos centrais. Confirme os pontos no mapa antes de abrir ao público.</Notice>
+      {edit && (
+        <div className="stack">
+          <Field label="Nome do bairro"><input value={edit.name} maxLength={60} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
+          <div className="grid-2">
+            <Field label="Latitude (ex.: -17.8790)"><input inputMode="decimal" value={edit.lat} onChange={(e) => setEdit({ ...edit, lat: e.target.value })} /></Field>
+            <Field label="Longitude (ex.: 36.8880)"><input inputMode="decimal" value={edit.lon} onChange={(e) => setEdit({ ...edit, lon: e.target.value })} /></Field>
+          </div>
+          {edit.id && <label className="check"><input type="checkbox" checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} /> Activo (aparece ao cliente)</label>}
+          <Field label="Motivo da alteração"><input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+          <ErrorBox error={a.error} />
+          <div className="row-end">
+            <Button kind="ghost" onClick={() => setEdit(null)}>Cancelar</Button>
+            <Button
+              busy={a.busy}
+              disabled={!valid}
+              onClick={async () => {
+                const body = { name: edit.name.trim(), lat, lon, active: edit.active, reason };
+                if (await a.run(() => (edit.id ? api.put(`/admin/bairros/${edit.id}`, body) : api.post('/admin/bairros', body)))) {
+                  setEdit(null);
+                  setReason('');
+                  q.reload();
+                }
+              }}
+            >
+              Guardar
+            </Button>
+          </div>
+        </div>
+      )}
+      <Loaded q={q}>
+        {(list) => (
+          <Table
+            head={['Bairro', 'Ponto central', 'Estado', '']}
+            rows={list.map((b) => [
+              b.name,
+              `${Number(b.lat).toFixed(4)}, ${Number(b.lon).toFixed(4)}`,
+              <Badge key="s" tone={b.active ? 'ok' : 'muted'}>{b.active ? 'Activo' : 'Inactivo'}</Badge>,
+              <button key="e" className="link" onClick={() => { setEdit({ id: b.id, name: b.name, lat: String(b.lat), lon: String(b.lon), active: !!b.active }); setReason(''); }}>Editar</button>,
+            ])}
+          />
+        )}
+      </Loaded>
+    </Card>
   );
 }
 

@@ -659,10 +659,45 @@ r.put('/zones/:id', async (c) => {
   const before = await one(c.env.DB, 'SELECT * FROM service_zones WHERE id = ?', c.req.param('id'));
   if (!before) throw notFound();
   await c.env.DB.batch([
-    c.env.DB.prepare('UPDATE service_zones SET name = ?, kind = ?, polygon = ?, active = ?, version = system_settings.version + 1, updated_by = ?, updated_at = ? WHERE id = ?').bind(
+    c.env.DB.prepare('UPDATE service_zones SET name = ?, kind = ?, polygon = ?, active = ?, version = version + 1, updated_by = ?, updated_at = ? WHERE id = ?').bind(
       b.name, b.kind, JSON.stringify(b.polygon), b.active ? 1 : 0, u.id, nowIso(), c.req.param('id'),
     ),
     auditStmt(c.env.DB, who(u), 'zone.update', 'service_zone', c.req.param('id'), b.reason, before, b),
+  ]);
+  return c.json({ ok: true });
+});
+
+// Bairros: o cliente escolhe os locais pelo nome do bairro. O ponto central entra no cálculo da distância.
+r.get('/bairros', async (c) => {
+  admin(c);
+  return c.json(await all(c.env.DB, 'SELECT * FROM bairros ORDER BY city, lower(name)'));
+});
+
+const bairroRules = { name: v.str(2, 60), lat: v.num(-27, -10), lon: v.num(30, 41), ...reasonRule };
+
+r.post('/bairros', async (c) => {
+  const u = admin(c);
+  const b = need<{ name: string; lat: number; lon: number; city?: string; reason: string }>(await c.req.json(), { ...bairroRules, city: v.optStr(60) });
+  const city = b.city?.trim() || 'Quelimane';
+  if (await one(c.env.DB, 'SELECT 1 FROM bairros WHERE city = ? AND lower(name) = lower(?)', city, b.name)) throw conflict('bairro_existe', 'Já existe um bairro com este nome.');
+  const id = uuid();
+  await c.env.DB.batch([
+    c.env.DB.prepare('INSERT INTO bairros (id, city, name, lat, lon, updated_by) VALUES (?,?,?,?,?,?)').bind(id, city, b.name, b.lat, b.lon, u.id),
+    auditStmt(c.env.DB, who(u), 'bairro.create', 'bairro', id, b.reason, null, b),
+  ]);
+  return c.json({ id }, 201);
+});
+
+r.put('/bairros/:id', async (c) => {
+  const u = admin(c);
+  const b = need<{ name: string; lat: number; lon: number; active: boolean; reason: string }>(await c.req.json(), { ...bairroRules, active: v.bool() });
+  const before = await one<{ city: string }>(c.env.DB, 'SELECT * FROM bairros WHERE id = ?', c.req.param('id'));
+  if (!before) throw notFound();
+  if (await one(c.env.DB, 'SELECT 1 FROM bairros WHERE city = ? AND lower(name) = lower(?) AND id <> ?', before.city, b.name, c.req.param('id')))
+    throw conflict('bairro_existe', 'Já existe um bairro com este nome.');
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE bairros SET name = ?, lat = ?, lon = ?, active = ?, updated_by = ?, updated_at = ? WHERE id = ?').bind(b.name, b.lat, b.lon, b.active ? 1 : 0, u.id, nowIso(), c.req.param('id')),
+    auditStmt(c.env.DB, who(u), 'bairro.update', 'bairro', c.req.param('id'), b.reason, before, b),
   ]);
   return c.json({ ok: true });
 });

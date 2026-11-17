@@ -32,6 +32,12 @@ r.get('/places/reverse', async (c) => {
   return c.json({ label: await reversePlace(c.env, lat, lon), coverage: coverageFor(lat, lon, zones) });
 });
 
+/** Bairros activos: o cliente escreve o nome do bairro de recolha e de entrega. */
+r.get('/bairros', async (c) => {
+  requireRole(c, 'customer');
+  return c.json(await all(c.env.DB, 'SELECT id, name, city FROM bairros WHERE active = 1 ORDER BY lower(name)'));
+});
+
 r.get('/addresses', async (c) => {
   const u = requireRole(c, 'customer');
   return c.json(await all(c.env.DB, 'SELECT * FROM customer_addresses WHERE user_id = ? ORDER BY created_at DESC', u.id));
@@ -101,13 +107,30 @@ r.get('/slots', async (c) => {
 // ------------------------------------------------------------------ Cotação
 r.post('/quotes', async (c) => {
   const u = requireRole(c, 'customer');
+  const body = (await c.req.json()) as Record<string, unknown>;
+  // Locais por bairro: o servidor usa o ponto central do bairro (nunca coordenadas do cliente).
+  const viaBairro: Record<string, boolean> = {};
+  for (const k of ['pickup', 'dropoff'] as const) {
+    const p = body?.[k] as { bairro_id?: unknown; reference?: unknown } | undefined;
+    if (p && typeof p === 'object' && 'bairro_id' in p) {
+      const label = k === 'pickup' ? 'recolha' : 'entrega';
+      if (typeof p.bairro_id !== 'string') throw bad('bairro', `Escolha o bairro de ${label}.`);
+      if (p.reference !== undefined && p.reference !== null && (typeof p.reference !== 'string' || p.reference.length > 200))
+        throw bad('referencia', 'A referência tem no máximo 200 caracteres.');
+      const bairro = await one<{ name: string; lat: number; lon: number }>(c.env.DB, 'SELECT name, lat, lon FROM bairros WHERE id = ? AND active = 1', p.bairro_id);
+      if (!bairro) throw bad('bairro', `O bairro de ${label} não está na nossa área de serviço.`);
+      const ref = typeof p.reference === 'string' ? p.reference.trim() : '';
+      body[k] = { lat: Number(bairro.lat), lon: Number(bairro.lon), text: ref ? `${bairro.name}: ${ref}` : `Bairro ${bairro.name}` };
+      viaBairro[k] = true;
+    }
+  }
   const b = need<{
     pickup: { lat: number; lon: number; text: string };
     dropoff: { lat: number; lon: number; text: string };
     weight_kg: number;
     service_type: 'normal' | 'expressa';
     scheduled_at?: string | null;
-  }>(await c.req.json(), {
+  }>(body, {
     pickup: point,
     dropoff: point,
     weight_kg: (x) => (typeof x === 'number' ? checkWeight(x) : 'Indique o peso.'),
@@ -123,7 +146,8 @@ r.post('/quotes', async (c) => {
   if (wErr) throw bad('peso', wErr);
 
   const zones = await loadZones(c.env.DB);
-  for (const [label, p] of [['recolha', b.pickup], ['destino', b.dropoff]] as const) {
+  for (const [label, p, k] of [['recolha', b.pickup, 'pickup'], ['destino', b.dropoff, 'dropoff']] as const) {
+    if (viaBairro[k]) continue; // um bairro activo já é área de serviço
     const cov = coverageFor(p.lat, p.lon, zones);
     if (!cov.ok) throw bad('fora_cobertura', `Local de ${label}: ${cov.reason}`);
   }
@@ -717,6 +741,18 @@ r.post('/subscriptions', async (c) => {
   };
   await run(c.env.DB, 'INSERT INTO subscriptions (id, customer_id, plan_id, plan_snapshot) VALUES (?,?,?,?)', id, u.id, b.plan_id, JSON.stringify(snapshot));
   return c.json({ id, status: 'pending_payment', amount_cents: plan.price_cents }, 201);
+});
+
+/** Subscrição do próprio cliente (usada na página de pagamento do plano). */
+r.get('/subscriptions/:id', async (c) => {
+  const u = requireRole(c, 'customer');
+  const s = await one<{ id: string; status: string; plan_snapshot: string; created_at: string }>(
+    c.env.DB, 'SELECT id, status, plan_snapshot, created_at FROM subscriptions WHERE id = ? AND customer_id = ?', c.req.param('id'), u.id,
+  );
+  if (!s) throw notFound('Subscrição não encontrada.');
+  const plan = parseJson<{ name: string; price_cents: number; deliveries_included: number; period_days: number }>(s.plan_snapshot, { name: '', price_cents: 0, deliveries_included: 0, period_days: 30 });
+  const payment = await one(c.env.DB, 'SELECT id, provider, status, amount_cents FROM payment_intents WHERE subscription_id = ? ORDER BY created_at DESC LIMIT 1', s.id);
+  return c.json({ id: s.id, status: s.status, payment, plan_name: plan.name, price_cents: plan.price_cents, deliveries_included: plan.deliveries_included, period_days: plan.period_days, created_at: s.created_at });
 });
 
 r.post('/subscriptions/:id/cancel', async (c) => {

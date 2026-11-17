@@ -84,3 +84,11 @@ const LABELS: Record<string, string> = {
   independente: 'Independente', proprio: 'Próprio', bicicleta: 'Bicicleta', motorizada: 'Motorizada',
 };
 export const lbl = (s: string | null | undefined) => (s ? LABELS[s] ?? s : '—');
+
+/** Telemóvel de Moçambique (mesma regra da API): 8X XXX XXXX, com ou sem +258. */
+export function isMzPhone(raw: string): boolean {
+  let d = raw.replace(/[^\d]/g, '');
+  if (d.startsWith('00258') && d.length === 14) d = d.slice(5);
+  else if (d.startsWith('258') && d.length === 12) d = d.slice(3);
+  return /^8[2-7]\d{7}$/.test(d);
+}
