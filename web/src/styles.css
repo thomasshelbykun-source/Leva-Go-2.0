@@ -828,3 +828,40 @@ ul.plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.35rem;
 .cx-sheet { padding-bottom: calc(86px + env(safe-area-inset-bottom)); min-height: calc(100dvh - 110px); }
 .app-shell .page-cx .page-head { padding-bottom: 3rem; }
 .ad-input input, .ad-input input::placeholder { font-weight: 400; }
+
+/* Nova encomenda: passos Encomenda, Serviço e Pagamento (desenho aprovado, 11/2026). */
+.cx-continue-inline { position: static; margin-top: 0; width: auto; flex: 1; min-height: 52px; font-size: 1.1rem; }
+.page-cx .row-between > .btn-ghost { flex: 0 0 38%; min-height: 52px; border-radius: 16px; background: #e9ecf1; color: var(--navy); font-weight: 700; }
+:root[data-theme='dark'] .page-cx .row-between > .btn-ghost { background: var(--surface-2); color: var(--text); }
+.page-cx .field { display: flex; flex-direction: column; gap: 0.45rem; }
+.page-cx .field-label { font-weight: 700; color: var(--navy); }
+:root[data-theme='dark'] .page-cx .field-label { color: var(--text); }
+.cx-option { display: flex; align-items: center; gap: 0.65rem; padding: 0.8rem 0.85rem; min-height: 72px; border: 1px solid #d3dbe5; border-radius: 16px; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.cx-option strong { display: block; font-size: 1.05rem; }
+.cx-option small { display: block; font-size: 0.82rem; opacity: 0.85; }
+.cx-option-on { background: var(--navy); border-color: var(--navy); color: #fff; }
+.cx-radio { flex: none; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #b9c3d0; display: grid; place-items: center; }
+.cx-option-on .cx-radio { border-color: #fff; }
+.cx-option-on .cx-radio::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #fff; }
+.cx-service { display: flex; align-items: center; gap: 0.9rem; width: 100%; padding: 0.95rem 1rem; border: 1px solid #d3dbe5; border-radius: 18px; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.cx-service-icon { flex: none; color: var(--navy); }
+:root[data-theme='dark'] .cx-service-icon { color: var(--text); }
+.cx-service-x .cx-service-icon { color: var(--orange); }
+.cx-service-text { flex: 1; display: flex; flex-direction: column; gap: 0.15rem; }
+.cx-service-text strong { font-size: 1.15rem; }
+.cx-service-text small { font-size: 0.9rem; line-height: 1.35; }
+.cx-service-plus { font-style: normal; font-weight: 800; font-size: 1.15rem; color: var(--orange); }
+.cx-service-on { border: 1.5px solid var(--orange); background: #fff1e6; }
+:root[data-theme='dark'] .cx-service-on { background: #3d2a0a; }
+.cx-service-on .cx-radio { border-color: var(--orange); }
+.cx-service-on .cx-radio::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--orange); }
+.cx-pay { display: flex; align-items: flex-start; gap: 0.7rem; padding: 0.75rem 0.85rem; border: 1px solid #d3dbe5; border-radius: 14px; cursor: pointer; }
+.cx-pay input { margin-top: 0.25rem; accent-color: var(--orange); }
+.cx-pay strong { display: block; }
+.cx-pay small { display: block; color: var(--muted); font-size: 0.82rem; }
+.cx-pay-on { border-color: var(--orange); background: #fff7f0; }
+:root[data-theme='dark'] .cx-pay-on { background: #3d2a0a; }
+.stack-sm { display: flex; flex-direction: column; gap: 0.5rem; }
+.pay-box { display: flex; flex-direction: column; gap: 0.6rem; }
+.pay-big { font-size: 1.4rem; font-weight: 800; letter-spacing: 0.02em; color: var(--navy); }
+:root[data-theme='dark'] .pay-big { color: var(--text); }

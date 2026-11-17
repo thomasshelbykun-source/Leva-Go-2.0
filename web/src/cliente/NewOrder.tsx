@@ -2,12 +2,11 @@ import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { newIdempotencyKey } from '../shared/api';
 import { useConfig } from '../shared/config';
-import { CATEGORIES, km, minutes, mt, todayMaputo } from '../shared/format';
-import { MapView } from '../shared/map';
+import { CATEGORIES, isMzPhone, km, minutes, mt, todayMaputo } from '../shared/format';
 import { Icon } from '../shared/brand';
 import { useSession } from '../shared/session';
 import { Button, Card, ErrorBox, Field, KV, Notice, Page, useAction, useLoad } from '../shared/ui';
-import { AddressField, SavedAddresses, type Point, type Preset } from './LocationPicker';
+import { BairroField, type Bairro, type BairroPoint } from './Bairros';
 
 interface Quote {
   quote_id: string;
@@ -25,8 +24,16 @@ interface Quote {
 }
 
 type Step = 'estabelecimento' | 'locais' | 'detalhes' | 'tipo' | 'confirmar';
-const STEPS_ENVIO: [Step, string][] = [['locais', 'Locais'], ['detalhes', 'Encomenda'], ['tipo', 'Serviço'], ['confirmar', 'Confirmação']];
-const STEPS_RECOLHA: [Step, string][] = [['estabelecimento', 'Onde'], ['locais', 'Locais'], ['detalhes', 'Entrega'], ['tipo', 'Serviço'], ['confirmar', 'Confirmação']];
+const STEPS_ENVIO: [Step, string][] = [['locais', 'Locais'], ['detalhes', 'Encomenda'], ['tipo', 'Serviço'], ['confirmar', 'Pagamento']];
+const STEPS_RECOLHA: [Step, string][] = [['estabelecimento', 'Onde'], ['locais', 'Locais'], ['detalhes', 'Entrega'], ['tipo', 'Serviço'], ['confirmar', 'Pagamento']];
+const WEIGHTS: [string, string][] = [['1', '≤ 1 kg'], ['5', '≤ 5 kg'], ['10', '≤ 10 kg']];
+const PAY_LABEL: Record<string, string> = { mpesa: 'M-Pesa', emola: 'e-Mola', na_entrega: 'Pagar na entrega (dinheiro)', sandbox: 'Pagamento de teste (simulado)' };
+const PAY_HINT: Record<string, string> = {
+  mpesa: 'Transfere para o número M-Pesa da LevaGo e indicas o código do SMS.',
+  emola: 'Transfere para o número e-Mola da LevaGo e indicas o código do SMS.',
+  na_entrega: 'Pagas ao estafeta no momento da entrega.',
+  sandbox: 'Só para testes. Não é cobrado dinheiro.',
+};
 const ESTAB: [string, string][] = [['restaurante', 'Restaurante'], ['farmacia', 'Farmácia'], ['loja', 'Loja / Mercado'], ['outro', 'Outro']];
 
 /** Solicitar entrega: locais → encomenda → modalidade e agendamento → preço e confirmação. */
@@ -42,9 +49,10 @@ export function NewOrder() {
   const supplement = home.data?.express_supplement_cents ?? 15000;
   const [step, setStep] = useState<Step>(recolha ? 'estabelecimento' : 'locais');
   const [est, setEst] = useState({ establishment_type: 'restaurante', establishment_name: '', order_ref: '', paid_confirmed: false });
-  const [pickup, setPickup] = useState<Point | null>(null);
-  const [dropoff, setDropoff] = useState<Point | null>(null);
-  const [preset, setPreset] = useState<{ pickup: Preset | null; dropoff: Preset | null }>({ pickup: null, dropoff: null });
+  const bairros = useLoad(() => api.get<Bairro[]>('/bairros'), []);
+  const [pickup, setPickup] = useState<BairroPoint | null>(null);
+  const [dropoff, setDropoff] = useState<BairroPoint | null>(null);
+  const [otherWeight, setOtherWeight] = useState(false);
   // Na recolha, a entrega é para o próprio cliente: os dados vêm preenchidos.
   const [d, setD] = useState({
     weight_kg: recolha ? '2' : '', category: recolha ? 'compras' : 'documentos', description: '',
@@ -79,11 +87,19 @@ export function NewOrder() {
 
   const getQuote = async () => {
     const q = await a.run(() =>
-      api.post<Quote>('/quotes', { pickup, dropoff, weight_kg: weight, service_type: service, scheduled_at: when === 'agendar' ? slot : null }),
+      api.post<Quote>('/quotes', {
+        pickup: { bairro_id: pickup!.bairro.id, reference: pickup!.reference.trim() || undefined },
+        dropoff: { bairro_id: dropoff!.bairro.id, reference: dropoff!.reference.trim() || undefined },
+        weight_kg: weight,
+        service_type: service,
+        scheduled_at: when === 'agendar' ? slot : null,
+      }),
     );
     if (q) {
       setQuote(q);
-      setMethod(q.total_cents === 0 ? 'subscricao' : '');
+      // Com um só método activo, fica já escolhido.
+      const on = methods.filter(([, , ok]) => ok);
+      setMethod(q.total_cents === 0 ? 'subscricao' : on.length === 1 ? on[0]![0] : '');
       setStep('confirmar');
     }
   };
@@ -93,7 +109,7 @@ export function NewOrder() {
       api.post<{ id: string; status: string; delivery_code: string; pickup_code?: string | null }>(
         '/orders',
         {
-          quote_id: quote!.quote_id, recipient_name: d.recipient_name, recipient_phone: d.recipient_phone, pickup_contact: d.pickup_contact || undefined,
+          quote_id: quote!.quote_id, recipient_name: d.recipient_name.trim(), recipient_phone: d.recipient_phone.trim(), pickup_contact: d.pickup_contact.trim() || undefined,
           category: d.category, description: d.description, notes: d.notes || undefined, payment_method: method,
           quantity: Math.max(1, Math.min(50, parseInt(d.quantity, 10) || 1)), fragile: d.fragile, declaration_accepted: d.declaration,
           declared_value_mt: d.declared_value.trim() ? Number(d.declared_value.replace(',', '.')) : null,
@@ -123,9 +139,8 @@ export function NewOrder() {
       ] as const)
     : [];
 
-  const qty = parseInt(d.quantity, 10);
-  const valueOk = !d.declared_value.trim() || Number(d.declared_value.replace(',', '.')) >= 0;
-  const detailsOk = d.declaration && qty >= 1 && qty <= 50 && valueOk && weight > 0 && weight <= maxKg && d.description.trim().length >= 3 && d.recipient_name.trim().length >= 2 && d.recipient_phone.trim().length >= 9;
+  const phoneOk = isMzPhone(d.recipient_phone);
+  const detailsOk = d.declaration && weight > 0 && weight <= maxKg && d.description.trim().length >= 3 && d.recipient_name.trim().length >= 2 && phoneOk;
 
   return (
     <Page title={recolha ? 'Pedir recolha' : 'Nova encomenda'} back="/cliente" className="page-cx">
@@ -167,15 +182,16 @@ export function NewOrder() {
 
       {step === 'locais' && (
         <div className="ad-step">
-          <AddressField
-            question={recolha ? 'Onde fica o estabelecimento?' : 'Onde recolher a encomenda?'}
-            placeholder={recolha ? 'Introduz o endereço do estabelecimento' : 'Introduz o endereço de recolha'}
-            kind="pickup"
+          {bairros.error && <ErrorBox error={bairros.error} retry={bairros.reload} />}
+          <BairroField
+            question={recolha ? 'Em que bairro fica o estabelecimento?' : 'Em que bairro recolhemos?'}
+            placeholder="Escreve o nome do bairro"
+            bairros={bairros.data ?? []}
+            value={pickup}
             onChange={setPickup}
-            preset={preset.pickup}
           />
-          <AddressField question="Onde entregar?" placeholder="Introduz o endereço de entrega" kind="dropoff" onChange={setDropoff} preset={preset.dropoff} />
-          <SavedAddresses onPick={(k, a) => setPreset((p) => ({ ...p, [k]: { ...a, n: Date.now() } }))} />
+          <BairroField question="Em que bairro entregamos?" placeholder="Escreve o nome do bairro" bairros={bairros.data ?? []} value={dropoff} onChange={setDropoff} />
+          {bairros.loading && <small className="cx-note">A carregar os bairros…</small>}
           <button type="button" className="cx-continue" disabled={!pickup || !dropoff} onClick={() => setStep('detalhes')}>
             Continuar <Icon name="arrowRight" size={26} />
           </button>
@@ -183,9 +199,41 @@ export function NewOrder() {
       )}
 
       {step === 'detalhes' && (
-        <Card className="stack">
-          <Field label={`Peso aproximado (kg, até ${maxKg})`} error={d.weight_kg && !(weight > 0 && weight <= maxKg) ? `O peso tem de estar entre 0,1 e ${maxKg} kg.` : null}>
-            <input inputMode="decimal" value={d.weight_kg} onChange={(e) => setD({ ...d, weight_kg: e.target.value })} />
+        <div className="stack">
+          <h2 className="cx-h">{recolha ? 'Dados da recolha' : 'Dados da encomenda'}</h2>
+          <Field label="Peso aproximado" error={d.weight_kg && !(weight > 0 && weight <= maxKg) ? `O peso tem de estar entre 0,1 e ${maxKg} kg.` : null}>
+            <div className="chips" role="radiogroup" aria-label="Peso aproximado">
+              {WEIGHTS.map(([k, l]) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="radio"
+                  aria-checked={!otherWeight && d.weight_kg === k}
+                  className={!otherWeight && d.weight_kg === k ? 'chip active' : 'chip'}
+                  onClick={() => {
+                    setOtherWeight(false);
+                    setD({ ...d, weight_kg: k });
+                  }}
+                >
+                  {l}
+                </button>
+              ))}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={otherWeight}
+                className={otherWeight ? 'chip active' : 'chip'}
+                onClick={() => {
+                  setOtherWeight(true);
+                  setD({ ...d, weight_kg: '' });
+                }}
+              >
+                Outro
+              </button>
+            </div>
+            {otherWeight && (
+              <input inputMode="decimal" autoFocus placeholder={`Peso em kg (até ${maxKg})`} value={d.weight_kg} onChange={(e) => setD({ ...d, weight_kg: e.target.value })} />
+            )}
           </Field>
           <Field label="Categoria">
             <select value={d.category} onChange={(e) => setD({ ...d, category: e.target.value })}>
@@ -196,180 +244,211 @@ export function NewOrder() {
               ))}
             </select>
           </Field>
-          <Field label={recolha ? 'O que vamos recolher?' : 'O que vais enviar?'}>
-            <input value={d.description} maxLength={300} onChange={(e) => setD({ ...d, description: e.target.value })} placeholder="Ex.: envelope com documentos" />
+          <Field label={recolha ? 'O que vamos recolher?' : 'O que vais enviar?'} error={d.description && d.description.trim().length < 3 ? 'Escreve pelo menos 3 letras.' : null}>
+            <input value={d.description} maxLength={300} onChange={(e) => setD({ ...d, description: e.target.value })} placeholder="Ex.: Envelope" />
           </Field>
-          <Field label="Nome de quem recebe">
-            <input value={d.recipient_name} onChange={(e) => setD({ ...d, recipient_name: e.target.value })} />
-          </Field>
-          <Field label="Telemóvel de quem recebe">
-            <input inputMode="tel" value={d.recipient_phone} onChange={(e) => setD({ ...d, recipient_phone: e.target.value })} />
-          </Field>
-          <Field label="Contacto na recolha (opcional)">
-            <input inputMode="tel" value={d.pickup_contact} onChange={(e) => setD({ ...d, pickup_contact: e.target.value })} />
-          </Field>
-          <Field label="Observações para o estafeta (opcional)">
-            <textarea rows={2} maxLength={500} value={d.notes} onChange={(e) => setD({ ...d, notes: e.target.value })} />
-          </Field>
-          <div className="row-between">
-            <Field label="Quantidade de volumes">
-              <input inputMode="numeric" value={d.quantity} onChange={(e) => setD({ ...d, quantity: e.target.value.replace(/\D/g, '') })} />
-            </Field>
-            <Field label="Valor aproximado (MT, opcional)">
-              <input inputMode="decimal" value={d.declared_value} onChange={(e) => setD({ ...d, declared_value: e.target.value })} />
-            </Field>
+          <div className="field">
+            <span className="field-label">Quem vai receber?</span>
+            <label className="ad-input">
+              <Icon name="user" />
+              <input value={d.recipient_name} maxLength={80} placeholder="Nome de quem recebe" aria-label="Nome de quem recebe" onChange={(e) => setD({ ...d, recipient_name: e.target.value })} />
+            </label>
+            <label className="ad-input">
+              <Icon name="phone" />
+              <input inputMode="tel" value={d.recipient_phone} maxLength={16} placeholder="84 123 4567" aria-label="Telemóvel de quem recebe" onChange={(e) => setD({ ...d, recipient_phone: e.target.value })} />
+            </label>
+            {d.recipient_phone.trim().length >= 9 && !phoneOk && <span className="field-error">Número de Moçambique inválido (ex.: 84 123 4567).</span>}
           </div>
+          <Field label="Observações (opcional)">
+            <textarea rows={2} maxLength={500} value={d.notes} placeholder="Ex.: Ter cuidado" onChange={(e) => setD({ ...d, notes: e.target.value })} />
+          </Field>
           <label className="radio">
             <input type="checkbox" checked={d.fragile} onChange={(e) => setD({ ...d, fragile: e.target.checked })} /> Conteúdo frágil
           </label>
-          <Notice tone="warn">Não envie dinheiro, armas, drogas, animais ou produtos perigosos.</Notice>
           <label className="radio">
-            <input type="checkbox" checked={d.declaration} onChange={(e) => setD({ ...d, declaration: e.target.checked })} /> Declaro que a descrição é verdadeira, que o conteúdo é permitido e que a encomenda vai bem embalada e fechada.
+            <input type="checkbox" checked={d.declaration} onChange={(e) => setD({ ...d, declaration: e.target.checked })} /> Declaro que o conteúdo é permitido e vai bem embalado (sem dinheiro, armas, drogas, animais ou produtos perigosos).
           </label>
           <div className="row-between">
             <Button kind="ghost" onClick={() => setStep('locais')}>
               Voltar
             </Button>
-            <Button disabled={!detailsOk} onClick={() => setStep('tipo')}>
+            <button type="button" className="cx-continue cx-continue-inline" disabled={!detailsOk} onClick={() => setStep('tipo')}>
               Continuar
-            </Button>
+            </button>
           </div>
-        </Card>
+        </div>
       )}
 
       {step === 'tipo' && (
         <div className="stack">
-          <div className="grid-2">
-            {(['normal', 'expressa'] as const).map((s) => (
-              <Card key={s} className={`service-card ${service === s ? 'selected' : ''}`} onClick={() => setService(s)}>
-                <h3>{s === 'normal' ? 'Normal' : 'Expressa'}</h3>
-                <p className="small">{s === 'normal' ? 'Prioridade normal.' : 'Prioridade máxima, sujeita a estafetas disponíveis.'}</p>
-                {plan && <span className="tag">{s === 'normal' ? 'Sem custo adicional' : `+${mt(supplement)}`}</span>}
-              </Card>
-            ))}
+          <h2 className="cx-h">Quando desejas a entrega?</h2>
+          <div className="grid-2 cx-when">
+            <button type="button" className={`cx-option ${when === 'agora' ? 'cx-option-on' : ''}`} aria-pressed={when === 'agora'} onClick={() => setWhen('agora')}>
+              <span className="cx-radio" aria-hidden />
+              <span>
+                <strong>Agora</strong>
+                <small>Recolha e entrega hoje</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`cx-option ${when === 'agendar' ? 'cx-option-on' : ''}`}
+              aria-pressed={when === 'agendar'}
+              onClick={() => {
+                setWhen('agendar');
+                if (!slots) void loadSlots(date);
+              }}
+            >
+              <Icon name="calendar" />
+              <span>
+                <strong>Agendar</strong>
+                <small>Escolher data e hora</small>
+              </span>
+            </button>
           </div>
+          {when === 'agora' && cfg && !cfg.open_now && <Notice tone="warn">Estamos fora do horário de serviço. Pode agendar para outro horário.</Notice>}
+          {when === 'agendar' && (
+            <Card className="stack">
+              <Field label="Dia">
+                <input type="date" min={todayMaputo()} max={todayMaputo(7)} value={date} onChange={(e) => void loadSlots(e.target.value)} />
+              </Field>
+              {slotMsg && <Notice tone="warn">{slotMsg}</Notice>}
+              {slots && slots.length === 0 && !slotMsg && <Notice>Sem horários livres neste dia.</Notice>}
+              <div className="chips">
+                {slots?.map((s) => (
+                  <button key={s.start} type="button" disabled={!s.available} className={slot === s.start ? 'chip active' : 'chip'} onClick={() => setSlot(s.start)}>
+                    {s.label}
+                    {!s.available && ' (cheio)'}
+                  </button>
+                ))}
+              </div>
+            </Card>
+          )}
+          <h2 className="cx-h">Tipo de entrega</h2>
+          {(['normal', 'expressa'] as const).map((s) => (
+            <button key={s} type="button" className={`cx-service ${s === 'expressa' ? 'cx-service-x' : ''} ${service === s ? 'cx-service-on' : ''}`} aria-pressed={service === s} onClick={() => setService(s)}>
+              <span className="cx-service-icon">
+                <Icon name={s === 'normal' ? 'box' : 'bolt'} size={34} />
+              </span>
+              <span className="cx-service-text">
+                <strong>{s === 'normal' ? 'Normal' : 'Expressa'}</strong>
+                {s === 'normal' ? (
+                  <small>
+                    Previsão: de 1 – 3 horas
+                    <br />
+                    {plan ? '(sem custo adicional)' : '(tarifa normal)'}
+                  </small>
+                ) : (
+                  <small>
+                    Previsão: de 15 min a 1 hora
+                    <br />
+                    Prioridade máxima
+                  </small>
+                )}
+                {s === 'expressa' && <em className="cx-service-plus">{plan ? `+ ${mt(supplement)}` : 'Tarifa expressa'}</em>}
+              </span>
+              <span className="cx-radio" aria-hidden />
+            </button>
+          ))}
           {plan && (
             <Notice>
               Será descontada 1 encomenda do teu plano ({plan.remaining} disponíveis).
               {service === 'expressa' && home.data?.express_credits > 0 && ' Tens um crédito expresso: o suplemento fica pago.'}
             </Notice>
           )}
-          <Card className="stack">
-            <h3>Quando?</h3>
-            <div className="chips">
-              <button type="button" className={when === 'agora' ? 'chip active' : 'chip'} onClick={() => setWhen('agora')}>
-                Agora
-              </button>
-              <button
-                type="button"
-                className={when === 'agendar' ? 'chip active' : 'chip'}
-                onClick={() => {
-                  setWhen('agendar');
-                  if (!slots) void loadSlots(date);
-                }}
-              >
-                Agendar
-              </button>
-            </div>
-            {when === 'agora' && cfg && !cfg.open_now && <Notice tone="warn">Estamos fora do horário de serviço. Pode agendar para outro horário.</Notice>}
-            {when === 'agendar' && (
-              <>
-                <Field label="Dia">
-                  <input type="date" min={todayMaputo()} max={todayMaputo(7)} value={date} onChange={(e) => void loadSlots(e.target.value)} />
-                </Field>
-                {slotMsg && <Notice tone="warn">{slotMsg}</Notice>}
-                {slots && slots.length === 0 && !slotMsg && <Notice>Sem horários livres neste dia.</Notice>}
-                <div className="chips">
-                  {slots?.map((s) => (
-                    <button key={s.start} type="button" disabled={!s.available} className={slot === s.start ? 'chip active' : 'chip'} onClick={() => setSlot(s.start)}>
-                      {s.label}
-                      {!s.available && ' (cheio)'}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </Card>
+          <Notice>
+            <Icon name="info" size={18} /> A previsão inclui a atribuição do estafeta, a recolha e a entrega.
+          </Notice>
           <ErrorBox error={a.error} />
           <div className="row-between">
             <Button kind="ghost" onClick={() => setStep('detalhes')}>
               Voltar
             </Button>
-            <Button busy={a.busy} disabled={when === 'agendar' && !slot} onClick={getQuote}>
-              Continuar
-            </Button>
+            <button type="button" className="cx-continue cx-continue-inline" disabled={a.busy || (when === 'agendar' && !slot)} onClick={getQuote}>
+              {a.busy ? 'Aguarde…' : 'Continuar'}
+            </button>
           </div>
         </div>
       )}
 
       {step === 'confirmar' && quote && (
         <div className="stack">
-          <MapView
-            markers={[
-              { ...pickup!, kind: 'pickup' },
-              { ...dropoff!, kind: 'dropoff' },
-            ]}
-            route={quote.route_geometry}
-          />
+          <Card>
+            <h3>Resumo</h3>
+            <KV
+              items={[
+                ...(recolha ? ([['Recolha em', est.establishment_name]] as [string, string][]) : []),
+                ['De', `${pickup!.bairro.name}${pickup!.reference.trim() ? ` (${pickup!.reference.trim()})` : ''}`],
+                ['Para', `${dropoff!.bairro.name}${dropoff!.reference.trim() ? ` (${dropoff!.reference.trim()})` : ''}`],
+                ['Quem recebe', `${d.recipient_name.trim()} · ${d.recipient_phone.trim()}`],
+                ['Peso', `${String(weight).replace('.', ',')} kg`],
+                ['Modalidade', service === 'normal' ? 'Normal' : 'Expressa'],
+                ['Quando', when === 'agora' ? 'Agora' : (slots?.find((x) => x.start === slot)?.label ?? 'Agendado')],
+                ['Distância aproximada', km(quote.road_distance_m)],
+                ['Tempo estimado', minutes(quote.estimated_duration_s)],
+              ]}
+            />
+          </Card>
           {quote.breakdown.plan_unit ? (
             <Card>
-              <h3>Resumo</h3>
               <KV
                 items={[
-                  ...(recolha ? ([['Recolha em', est.establishment_name]] as [string, string][]) : []),
-                  ['Modalidade', service === 'normal' ? 'Normal' : 'Expressa'],
                   ['Encomendas do plano', `1 (ficam ${Math.max(0, quote.plan_remaining - 1)})`],
                   ...(service === 'expressa'
                     ? ([['Suplemento Expressa', quote.breakdown.express_credit ? 'Pago com crédito expresso' : mt(quote.breakdown.express_supplement_cents ?? supplement)]] as [string, string][])
                     : []),
-                  ['Tempo estimado', minutes(quote.estimated_duration_s)],
                 ]}
               />
               <div className="row-between">
-                <strong>Total adicional</strong>
+                <strong>Total a pagar</strong>
                 <div className="price">{mt(quote.total_cents)}</div>
               </div>
             </Card>
           ) : (
-          <Card>
-            <div className="price">{mt(quote.total_cents)}</div>
-            <KV
-              items={[
-                ['Distância por estrada', km(quote.road_distance_m)],
-                ['Tempo estimado', minutes(quote.estimated_duration_s)],
-                ['Modalidade', service === 'normal' ? 'Normal' : 'Expressa'],
-                ['Taxa base', mt(quote.breakdown.base_cents)],
-                ['Distância', mt(quote.breakdown.distance_cents)],
-                ['Peso', mt(quote.breakdown.weight_cents)],
-                ...(quote.breakdown.minimum_adjust_cents ? ([['Ajuste ao mínimo', mt(quote.breakdown.minimum_adjust_cents)]] as [string, string][]) : []),
-                ...(quote.covered_by_subscription ? ([['Coberto pela subscrição', `− ${mt(quote.breakdown.subscription_discount_cents)}`]] as [string, string][]) : []),
-              ]}
-            />
-            <small>Preço válido até {new Date(quote.expires_at).toLocaleTimeString('pt-PT', { timeZone: 'Africa/Maputo', hour: '2-digit', minute: '2-digit' })}.</small>
-          </Card>
+            <Card>
+              <KV
+                items={[
+                  ['Taxa base', mt(quote.breakdown.base_cents)],
+                  ['Distância', mt(quote.breakdown.distance_cents)],
+                  ['Peso', mt(quote.breakdown.weight_cents)],
+                  ...(quote.breakdown.minimum_adjust_cents ? ([['Ajuste ao mínimo', mt(quote.breakdown.minimum_adjust_cents)]] as [string, string][]) : []),
+                  ...(quote.covered_by_subscription ? ([['Coberto pela subscrição', `− ${mt(quote.breakdown.subscription_discount_cents)}`]] as [string, string][]) : []),
+                ]}
+              />
+              <div className="row-between">
+                <strong>Total a pagar</strong>
+                <div className="price">{mt(quote.total_cents)}</div>
+              </div>
+              <small>Preço válido até {new Date(quote.expires_at).toLocaleTimeString('pt-PT', { timeZone: 'Africa/Maputo', hour: '2-digit', minute: '2-digit' })}.</small>
+            </Card>
           )}
-          <Notice>Depois de confirmar, recebes 2 códigos. O código de recolha é para quem entrega a encomenda ao estafeta. O código de entrega é só para quem recebe. Não partilhes os códigos com o estafeta antes da hora.</Notice>
           {!quote.service_available_now && <Notice tone="warn">{quote.hours_message} Volte atrás e agende para outro horário.</Notice>}
           {quote.total_cents > 0 && (
             <Card className="stack">
-              <h3>Pagamento</h3>
-              {methods.filter(([, , on]) => on).length === 0 && <Notice tone="warn">Nenhum método de pagamento está activo agora.</Notice>}
-              {methods.map(([k, l, on]) => (
-                <label key={k} className={`radio ${on ? '' : 'disabled'}`}>
-                  <input type="radio" name="metodo" disabled={!on} checked={method === k} onChange={() => setMethod(k)} /> {l}
-                  {!on && <small> (em breve)</small>}
-                </label>
-              ))}
+              <h3>Como queres pagar?</h3>
+              {methods.filter(([, , on]) => on).length === 0 && <Notice tone="warn">Nenhum método de pagamento está activo agora. Contacte o apoio LevaGo.</Notice>}
+              {methods
+                .filter(([, , on]) => on)
+                .map(([k]) => (
+                  <label key={k} className={`cx-pay ${method === k ? 'cx-pay-on' : ''}`}>
+                    <input type="radio" name="metodo" checked={method === k} onChange={() => setMethod(k)} />
+                    <span>
+                      <strong>{PAY_LABEL[k]}</strong>
+                      <small>{PAY_HINT[k]}</small>
+                    </span>
+                  </label>
+                ))}
             </Card>
           )}
+          <Notice>Depois de confirmar, recebes 2 códigos. O código de recolha é para quem entrega a encomenda ao estafeta. O código de entrega é só para quem recebe. Não partilhes os códigos antes da hora.</Notice>
           <ErrorBox error={a.error} />
           <div className="row-between">
             <Button kind="ghost" onClick={() => setStep('tipo')}>
-              Alterar
+              Voltar
             </Button>
-            <Button busy={a.busy} disabled={!method || !quote.service_available_now} onClick={confirm}>
-              Confirmar pedido
-            </Button>
+            <button type="button" className="cx-continue cx-continue-inline" disabled={a.busy || !method || !quote.service_available_now} onClick={confirm}>
+              {a.busy ? 'Aguarde…' : quote.total_cents > 0 && method !== 'na_entrega' ? 'Confirmar e pagar' : 'Confirmar pedido'}
+            </button>
           </div>
         </div>
       )}
