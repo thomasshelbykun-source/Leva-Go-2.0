@@ -102,10 +102,11 @@ auth.post('/register/verify', async (c) => {
 });
 
 auth.post('/login', async (c) => {
-  const body = need<{ phone: string; password: string; app: AppName }>(await c.req.json(), {
+  const body = need<{ phone: string; password: string; app: AppName; remember?: boolean }>(await c.req.json(), {
     phone: v.str(3, 120),
     password: v.str(1, 128),
     app: v.oneOf('cliente', 'estafeta', 'admin'),
+    remember: v.optBool(),
   });
   // O campo aceita o telemóvel ou, para quem o registou, o email.
   const byEmail = body.phone.includes('@');
@@ -113,6 +114,8 @@ auth.post('/login', async (c) => {
   const neutral = new ApiError(401, 'credenciais_invalidas', byEmail ? 'Email ou palavra-passe incorrectos.' : 'Telefone ou palavra-passe incorrectos.');
   if (!login) throw neutral;
   await rateLimit(c.env.DB, `login:${login}`, 10, 15);
+  // Também por endereço de rede, para travar quem tenta muitas contas diferentes.
+  await rateLimit(c.env.DB, `login-ip:${c.req.header('cf-connecting-ip') ?? 'local'}`, 60, 15);
   const u = await one<{ id: string; name: string; phone: string; password_hash: string; status: string; locked_until: string | null }>(
     c.env.DB,
     byEmail ? 'SELECT * FROM users WHERE lower(email) = ?' : 'SELECT * FROM users WHERE phone = ?',
@@ -141,7 +144,7 @@ auth.post('/login', async (c) => {
   // O Admin não tem entrada própria na página inicial: entra pelo login de Estafeta e vai para o painel.
   const app: AppName = body.app === 'estafeta' && APP_ROLES.admin.some((r) => roles.includes(r)) ? 'admin' : body.app;
   if (app === 'admin') await c.env.DB.batch([auditStmt(c.env.DB, { id: u.id, role: 'admin' }, 'login', 'session', null)]);
-  const session = await createSession(c.env.DB, u.id, app);
+  const session = await createSession(c.env.DB, u.id, app, body.remember !== false);
   return c.json({ ...session, app, user: { id: u.id, name: u.name, phone: u.phone, roles } });
 });
 

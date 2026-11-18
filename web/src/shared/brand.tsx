@@ -77,6 +77,7 @@ const PATHS: Record<string, string> = {
   bookmark: 'M6.5 3h11v18L12 17l-5.5 4z',
   boxSend: 'M10 3 18 7v4.5M2 7l8-4M2 7v9l8 4 3-1.5M2 7l8 4 8-4M10 11v9M14.5 16.5H22M19 13.5l3 3-3 3',
   close: 'M6 6l12 12M18 6 6 18',
+  download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
   star: 'M12 3l2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z',
 };
 

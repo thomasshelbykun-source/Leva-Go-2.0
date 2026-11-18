@@ -146,18 +146,19 @@ export function Login() {
   const loc = useLocation() as { state?: { from?: string } };
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
   const a = useAction();
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const r = await a.run(() => s.api.post<{ token: string; app?: string }>('/auth/login', { phone, password, app: s.app }));
+    const r = await a.run(() => s.api.post<{ token: string; app?: string }>('/auth/login', { phone, password, app: s.app, remember }));
     if (r && r.app === 'admin' && s.app !== 'admin') {
       // Conta de Admin no login de Estafeta: abre o painel.
-      setToken('admin', r.token);
+      setToken('admin', r.token, remember);
       window.location.assign('/admin');
       return;
     }
     if (r) {
-      await s.signIn(r.token);
+      await s.signIn(r.token, remember);
       nav(loc.state?.from ?? s.base, { replace: true });
     }
   };
@@ -177,6 +178,9 @@ export function Login() {
           <Field label="Palavra-passe">
             <PasswordInput value={password} onChange={setPassword} />
           </Field>
+          <label className="au-check">
+            <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> <span>Manter sessão iniciada</span>
+          </label>
           <ErrorBox error={a.error} />
           <Button busy={a.busy}>Entrar</Button>
           <Link className="small center" to={`${s.base}/recuperar`}>
@@ -203,6 +207,9 @@ export function Login() {
         <IconField icon="lock" label="Palavra-passe">
           <PasswordInput value={password} onChange={setPassword} placeholder="Introduz a tua palavra-passe" />
         </IconField>
+        <label className="au-check">
+          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> <span>Manter sessão iniciada</span>
+        </label>
         <ErrorBox error={a.error} />
         <SubmitButton busy={a.busy}>Entrar</SubmitButton>
         <Link className="au-forgot" to={`${s.base}/recuperar`}>

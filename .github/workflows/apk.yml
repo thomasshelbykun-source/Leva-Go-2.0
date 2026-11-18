@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -39,7 +39,9 @@ jobs:
       - name: Construir APK
         run: flutter build apk --release --build-number=${{ github.run_number }}
       - name: Renomear
-        run: cp build/app/outputs/flutter-apk/app-release.apk build/LevaGo-2.0.${{ github.run_number }}.apk
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk build/LevaGo-2.0.${{ github.run_number }}.apk
+          mkdir -p build/latest && cp build/app/outputs/flutter-apk/app-release.apk build/latest/LevaGo.apk
       - uses: actions/upload-artifact@v4
         with:
           name: LevaGo-apk
@@ -55,3 +57,16 @@ jobs:
             Abre o site https://levago.pages.dev dentro da app.
             Assinado com a chave de teste: não publicar na Play Store com esta versão.
           files: mobile/build/LevaGo-2.0.${{ github.run_number }}.apk
+      # Endereço fixo para o botão «Baixar a app Android» do site:
+      # https://github.com/thomasshelbykun-source/Leva-Go-2.0/releases/download/apk-latest/LevaGo.apk
+      - name: Actualizar a versão fixa (apk-latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: LevaGo Android (última versão)
+          prerelease: true
+          overwrite_files: true
+          body: |
+            Última versão do APK da LevaGo (2.0.${{ github.run_number }}).
+            O site levago.pages.dev aponta para este ficheiro em «Baixar a app Android».
+          files: mobile/build/latest/LevaGo.apk

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { all, ApiError, getSetting, nowIso, one, parseJson, run, type Env, type Vars } from './lib/core.js';
-import { getDb, openDb } from './lib/db.js';
+import { getDb, isNeonUrl, openDb, openHttpDb } from './lib/db.js';
 import { fitsBusinessHours, type OrderStatus } from './lib/domain.js';
 import { envFlags, loadHours, loadSession, notifyStmt, transition, type OrderRow } from './lib/services.js';
 import admin from './routes/admin.js';
@@ -26,9 +26,12 @@ const onWorkers = () => typeof navigator !== 'undefined' && navigator.userAgent 
 export function loadEnv(bindings?: Vars0): Env {
   const e: Vars0 = bindings ?? process.env;
   return {
-    DB: bindings ? openDb(e.DATABASE_URL, 3) : getDb(),
-    ENVIRONMENT: e.ENVIRONMENT ?? 'staging',
-    CORS_ORIGINS: e.CORS_ORIGINS ?? 'http://localhost:5173',
+    // Na Cloudflare com Neon: consultas por HTTP (sem abrir ligação a cada pedido).
+    DB: bindings ? (isNeonUrl(e.DATABASE_URL) ? openHttpDb(e.DATABASE_URL!) : openDb(e.DATABASE_URL, 3)) : getDb(),
+    // Na Cloudflare, sem a variável ENVIRONMENT, conta como produção. Assim um site carregado à mão
+    // (sem as variáveis do wrangler.toml) nunca liga o pagamento de teste nem mostra códigos de verificação.
+    ENVIRONMENT: e.ENVIRONMENT ?? (bindings ? 'production' : 'staging'),
+    CORS_ORIGINS: e.CORS_ORIGINS ?? (bindings ? 'https://levago.pages.dev' : 'http://localhost:5173'),
     CRON_SECRET: e.CRON_SECRET,
     // Serviços públicos de teste; troque por servidores próprios em produção.
     ROUTING_OSRM_URL: e.ROUTING_OSRM_URL ?? 'https://router.project-osrm.org',

@@ -4,26 +4,30 @@ import { randomToken, sha256 } from './crypto.js';
 import { canTransition, courierEarning, STATUS_LABELS, type Actor, type HoursRow, type OrderStatus, type Zone } from './domain.js';
 
 // ------------------------------------------------------------------ Sessões
-const SESSION_DAYS: Record<AppName, number> = { cliente: 60, estafeta: 30, admin: 1 };
+// Com «Manter sessão iniciada» (por omissão), a sessão dura estes dias. Sem a opção, dura 1 dia.
+const SESSION_DAYS: Record<AppName, number> = { cliente: 60, estafeta: 30, admin: 7 };
 
-export async function createSession(db: Db, userId: string, app: AppName) {
+export async function createSession(db: Db, userId: string, app: AppName, remember = true) {
   const token = randomToken();
-  const expires = new Date(Date.now() + SESSION_DAYS[app] * 86_400_000).toISOString();
+  const days = remember ? SESSION_DAYS[app] : 1;
+  const expires = new Date(Date.now() + days * 86_400_000).toISOString();
   await run(db, 'INSERT INTO sessions (id, user_id, token_hash, app, expires_at) VALUES (?,?,?,?,?)', uuid(), userId, await sha256(token), app, expires);
   return { token, expires_at: expires };
 }
 
 export async function loadSession(db: Db, token: string): Promise<AuthUser | null> {
-  const row = await one<{ sid: string; app: AppName; id: string; name: string; phone: string; status: string }>(
+  // Uma só consulta (sessão, conta e papéis): cada ida à base de dados conta na velocidade.
+  const row = await one<{ sid: string; app: AppName; id: string; name: string; phone: string; status: string; roles: Role[] | null }>(
     db,
-    `SELECT s.id AS sid, s.app, u.id, u.name, u.phone, u.status
+    `SELECT s.id AS sid, s.app, u.id, u.name, u.phone, u.status,
+            (SELECT array_agg(r.role) FROM user_roles r WHERE r.user_id = u.id) AS roles
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?`,
     await sha256(token),
     nowIso(),
   );
   if (!row || row.status !== 'active') return null;
-  const roles = (await all<{ role: Role }>(db, 'SELECT role FROM user_roles WHERE user_id = ?', row.id)).map((r) => r.role);
+  const roles = (row.roles ?? []) as Role[];
   return { id: row.id, name: row.name, phone: row.phone, roles, app: row.app, sessionId: row.sid };
 }
 
