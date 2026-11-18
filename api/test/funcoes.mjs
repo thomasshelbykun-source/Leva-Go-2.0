@@ -109,6 +109,8 @@ export async function testarFuncoes(ctx) {
   ok((await api('PATCH', '/profile', { token: pf.token, body: { name: 'Pedro Perfil Novo', theme: 'dark' } })).status === 200, 'cliente altera nome e tema');
   ok((await api('PATCH', '/profile', { token: pf.token, body: { theme: 'roxo' } })).status === 400, 'tema inválido é rejeitado');
   ok((await api('PATCH', '/profile', { token: pf.token, body: { email: 'sem-arroba' } })).status === 400, 'email inválido é rejeitado');
+  ok((await api('PATCH', '/profile', { token: cli.token, body: { email: 'Partilhado@Exemplo.co.mz' } })).status === 200, 'cliente guarda um email livre');
+  ok((await api('PATCH', '/profile', { token: pf.token, body: { email: 'partilhado@exemplo.co.mz' } })).status === 409, 'email de outra conta é rejeitado (mesmo com outras maiúsculas)');
   ok((await api('POST', '/profile/password', { token: pf.token, body: { current: 'errada123', next: 'novasenha1' } })).status === 400, 'palavra-passe actual errada é rejeitada');
   ok((await api('POST', '/profile/password', { token: pf.token, body: { current: 'segredo123', next: 'curta' } })).status === 400, 'palavra-passe nova fraca é rejeitada');
   ok((await api('POST', '/profile/password', { token: pf.token, body: { current: 'segredo123', next: 'novasenha1' } })).status === 200, 'cliente muda a palavra-passe');

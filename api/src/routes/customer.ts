@@ -788,8 +788,11 @@ r.patch('/profile', async (c) => {
   const fields: Record<string, unknown> = {};
   if (b.name !== undefined) { if (v.str(2, 80)(b.name)) throw bad('nome', 'Nome inválido.'); fields.name = String(b.name).trim(); }
   if (b.email !== undefined) {
-    if (b.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(b.email))) throw bad('email', 'Email inválido.');
-    fields.email = b.email || null;
+    const email = String(b.email ?? '').trim().toLowerCase();
+    if (email && (email.length > 120 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))) throw bad('email', 'Email inválido.');
+    // O email também serve para entrar, por isso não pode ficar igual ao de outra conta.
+    if (email && (await one(c.env.DB, 'SELECT 1 FROM users WHERE lower(email) = ? AND id <> ?', email, u.id))) throw conflict('email_em_uso', 'Este email já está noutra conta.');
+    fields.email = email || null;
   }
   if (b.locale !== undefined) { if (!['pt-MZ', 'en'].includes(String(b.locale))) throw bad('idioma', 'Idioma inválido.'); fields.locale = b.locale; }
   if (b.theme !== undefined) { if (!['system', 'light', 'dark'].includes(String(b.theme))) throw bad('tema', 'Tema inválido.'); fields.theme = b.theme; }

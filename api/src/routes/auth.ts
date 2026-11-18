@@ -113,6 +113,8 @@ auth.post('/login', async (c) => {
   const neutral = new ApiError(401, 'credenciais_invalidas', byEmail ? 'Email ou palavra-passe incorrectos.' : 'Telefone ou palavra-passe incorrectos.');
   if (!login) throw neutral;
   await rateLimit(c.env.DB, `login:${login}`, 10, 15);
+  // Também por endereço de rede, para travar quem tenta muitas contas diferentes.
+  await rateLimit(c.env.DB, `login-ip:${c.req.header('cf-connecting-ip') ?? 'local'}`, 60, 15);
   const u = await one<{ id: string; name: string; phone: string; password_hash: string; status: string; locked_until: string | null }>(
     c.env.DB,
     byEmail ? 'SELECT * FROM users WHERE lower(email) = ?' : 'SELECT * FROM users WHERE phone = ?',
