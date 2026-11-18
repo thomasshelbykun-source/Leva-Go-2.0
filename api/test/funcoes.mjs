@@ -115,6 +115,14 @@ export async function testarFuncoes(ctx) {
   ok((await api('POST', '/profile/password', { token: pf.token, body: { current: 'segredo123', next: 'curta' } })).status === 400, 'palavra-passe nova fraca é rejeitada');
   ok((await api('POST', '/profile/password', { token: pf.token, body: { current: 'segredo123', next: 'novasenha1' } })).status === 200, 'cliente muda a palavra-passe');
   ok((await api('POST', '/auth/login', { body: { phone: '844000004', password: 'novasenha1', app: 'cliente' } })).status === 200, 'entra com a nova palavra-passe');
+  {
+    const days = (r) => (new Date(r.data.expires_at).getTime() - Date.now()) / 86_400_000;
+    const longa = await api('POST', '/auth/login', { body: { phone: '844000004', password: 'novasenha1', app: 'cliente' } });
+    ok(longa.status === 200 && days(longa) > 59, 'por omissão a sessão do cliente fica iniciada (60 dias)');
+    const curta = await api('POST', '/auth/login', { body: { phone: '844000004', password: 'novasenha1', app: 'cliente', remember: false } });
+    ok(curta.status === 200 && days(curta) < 1.01, 'sem «Manter sessão iniciada» a sessão dura 1 dia');
+    ok((await api('POST', '/auth/login', { body: { phone: '844000004', password: 'novasenha1', app: 'cliente', remember: 'sim' } })).status === 400, 'opção de sessão inválida é rejeitada');
+  }
   ok((await api('POST', '/account/delete', { token: pf.token, body: { password: 'segredo123' } })).status === 400, 'eliminar conta com palavra-passe errada é rejeitado');
   ok((await api('POST', '/account/delete', { token: pf.token, body: { password: 'novasenha1', reason: 'Teste' } })).status === 200, 'pedido de eliminação de conta registado');
   ok((await api('GET', '/home', { token: pf.token })).status === 401, 'sessão termina após o pedido de eliminação');

@@ -21,7 +21,7 @@ interface SessionCtx {
   api: Api;
   me: Me | null;
   loading: boolean;
-  signIn: (token: string) => Promise<void>;
+  signIn: (token: string, remember?: boolean) => Promise<void>;
   signOut: (all?: boolean) => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -69,8 +69,8 @@ export function SessionProvider({ app, base, children }: { app: AppName; base: s
     api: client,
     me,
     loading,
-    signIn: async (token) => {
-      setToken(app, token);
+    signIn: async (token, remember = true) => {
+      setToken(app, token, remember);
       setLoading(true);
       await refresh();
     },

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { newIdempotencyKey } from '../shared/api';
 import { useConfig } from '../shared/config';
@@ -36,6 +36,39 @@ const PAY_HINT: Record<string, string> = {
 };
 const ESTAB: [string, string][] = [['restaurante', 'Restaurante'], ['farmacia', 'Farmácia'], ['loja', 'Loja / Mercado'], ['outro', 'Outro']];
 
+// Pedido a meio: fica guardado no aparelho durante 24 h, para continuar depois de sair da app.
+const DRAFT_HOURS = 24;
+interface Draft {
+  saved: number;
+  step: Step;
+  est: { establishment_type: string; establishment_name: string; order_ref: string; paid_confirmed: boolean };
+  pickup: BairroPoint | null;
+  dropoff: BairroPoint | null;
+  otherWeight: boolean;
+  d: Record<string, any>;
+  service: 'normal' | 'expressa';
+  when: 'agora' | 'agendar';
+  date: string;
+}
+const draftKey = (userId: string | undefined, recolha: boolean) => `levago.cliente.rascunho.${userId ?? 'anon'}.${recolha ? 'recolha' : 'envio'}`;
+function readDraft(key: string): Draft | null {
+  try {
+    const raw = localStorage.getItem(key);
+    const dr = raw ? (JSON.parse(raw) as Draft) : null;
+    if (!dr || Date.now() - dr.saved > DRAFT_HOURS * 3_600_000) return null;
+    return dr;
+  } catch {
+    return null;
+  }
+}
+function dropDraft(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* sem armazenamento */
+  }
+}
+
 /** Solicitar entrega: locais → encomenda → modalidade e agendamento → preço e confirmação. */
 export function NewOrder() {
   const { api, me } = useSession();
@@ -47,21 +80,26 @@ export function NewOrder() {
   const home = useLoad(() => api.get<any>('/home'), []);
   const plan = home.data && !home.data.needs_plan ? home.data.subscription : null;
   const supplement = home.data?.express_supplement_cents ?? 15000;
-  const [step, setStep] = useState<Step>(recolha ? 'estabelecimento' : 'locais');
-  const [est, setEst] = useState({ establishment_type: 'restaurante', establishment_name: '', order_ref: '', paid_confirmed: false });
+  const key = draftKey(me?.id, recolha);
+  // O preço tem prazo: um pedido guardado no passo do pagamento volta ao passo do serviço.
+  const [draft] = useState(() => readDraft(key));
+  const [restored, setRestored] = useState(!!draft);
+  const [step, setStep] = useState<Step>(draft ? (draft.step === 'confirmar' ? 'tipo' : draft.step) : recolha ? 'estabelecimento' : 'locais');
+  const [est, setEst] = useState(draft?.est ?? { establishment_type: 'restaurante', establishment_name: '', order_ref: '', paid_confirmed: false });
   const bairros = useLoad(() => api.get<Bairro[]>('/bairros'), []);
-  const [pickup, setPickup] = useState<BairroPoint | null>(null);
-  const [dropoff, setDropoff] = useState<BairroPoint | null>(null);
-  const [otherWeight, setOtherWeight] = useState(false);
+  const [pickup, setPickup] = useState<BairroPoint | null>(draft?.pickup ?? null);
+  const [dropoff, setDropoff] = useState<BairroPoint | null>(draft?.dropoff ?? null);
+  const [otherWeight, setOtherWeight] = useState(draft?.otherWeight ?? false);
   // Na recolha, a entrega é para o próprio cliente: os dados vêm preenchidos.
-  const [d, setD] = useState({
+  const blank = {
     weight_kg: recolha ? '2' : '', category: recolha ? 'compras' : 'documentos', description: '',
     recipient_name: recolha ? me?.name ?? '' : '', recipient_phone: recolha ? (me?.phone ?? '').replace(/^\+?258/, '') : '', pickup_contact: '', notes: '',
     quantity: '1', declared_value: '', fragile: false, declaration: false,
-  });
-  const [service, setService] = useState<'normal' | 'expressa'>('normal');
-  const [when, setWhen] = useState<'agora' | 'agendar'>('agora');
-  const [date, setDate] = useState(todayMaputo());
+  };
+  const [d, setD] = useState<typeof blank>(draft ? { ...blank, ...draft.d } : blank);
+  const [service, setService] = useState<'normal' | 'expressa'>(draft?.service ?? 'normal');
+  const [when, setWhen] = useState<'agora' | 'agendar'>(draft?.when === 'agendar' && draft.date >= todayMaputo() ? 'agendar' : 'agora');
+  const [date, setDate] = useState(draft && draft.date >= todayMaputo() ? draft.date : todayMaputo());
   const [slot, setSlot] = useState<string | null>(null);
   const [slots, setSlots] = useState<{ start: string; label: string; available: boolean }[] | null>(null);
   const [slotMsg, setSlotMsg] = useState<string | null>(null);
@@ -69,6 +107,23 @@ export function NewOrder() {
   const [method, setMethod] = useState<string>('');
   const [idem] = useState(newIdempotencyKey);
   const a = useAction();
+
+  // Guarda o pedido a cada alteração.
+  useEffect(() => {
+    const untouched = !pickup && !dropoff && !d.description && !d.recipient_name.trim() && !est.establishment_name;
+    try {
+      if (untouched) return;
+      const dr: Draft = { saved: Date.now(), step, est, pickup, dropoff, otherWeight, d, service, when, date };
+      localStorage.setItem(key, JSON.stringify(dr));
+    } catch {
+      /* sem armazenamento: o pedido não fica guardado */
+    }
+  }, [key, step, est, pickup, dropoff, otherWeight, d, service, when, date]);
+
+  const startOver = () => {
+    dropDraft(key);
+    window.location.reload();
+  };
   const maxKg = cfg?.limits?.max_weight_kg ?? 15;
   const weight = Number(d.weight_kg.replace(',', '.'));
 
@@ -121,6 +176,7 @@ export function NewOrder() {
       ),
     );
     if (!o) return;
+    dropDraft(key);
     try {
       sessionStorage.setItem(`levago.code.${o.id}`, o.delivery_code);
       if (o.pickup_code) sessionStorage.setItem(`levago.pickup.${o.id}`, o.pickup_code);
@@ -152,6 +208,17 @@ export function NewOrder() {
           </li>
         ))}
       </ol>
+      {restored && (
+        <Notice tone="info">
+          Continuámos o pedido que deixou a meio.{' '}
+          <button type="button" className="link" onClick={startOver}>
+            Começar de novo
+          </button>{' '}
+          <button type="button" className="link" aria-label="Fechar aviso" onClick={() => setRestored(false)}>
+            ✕
+          </button>
+        </Notice>
+      )}
       {cfg && !cfg.pricing_published && <Notice tone="warn">Ainda não existe tabela de preços publicada. Não é possível pedir entregas por agora.</Notice>}
 
       {step === 'estabelecimento' && (

@@ -76,6 +76,50 @@ export async function testarEcras(ctx) {
       await context.close();
     }
 
+    console.log('Manter sessão e voltar ao mesmo sítio');
+    {
+      // Abre o site com a sessão e a última página guardadas, como quem fechou a app sem querer.
+      const reopen = async (store) => {
+        const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+        await context.addInitScript((entries) => {
+          if (sessionStorage.getItem('t.done')) return;
+          sessionStorage.setItem('t.done', '1');
+          for (const [k, v] of entries) localStorage.setItem(k, v);
+        }, Object.entries(store));
+        const page = await context.newPage();
+        await page.goto(SCREEN_ORIGIN + '/', { waitUntil: 'networkidle' });
+        await page.waitForTimeout(300);
+        return { page, context };
+      };
+      let r = await reopen({ 'levago.cliente.token': tokens.cliente, 'levago.ultima-pagina': '/cliente/encomendas' });
+      ok(new URL(r.page.url()).pathname === '/cliente/encomendas', 'cliente volta à última página ao abrir o site');
+      await r.context.close();
+      r = await reopen({ 'levago.estafeta.token': tokens.estafeta });
+      ok(new URL(r.page.url()).pathname.startsWith('/estafeta'), 'estafeta com sessão abre a app de estafeta (não a página inicial)');
+      await r.context.close();
+      r = await reopen({ 'levago.admin.token': tokens.admin, 'levago.ultima-pagina': '/admin' });
+      ok(new URL(r.page.url()).pathname.startsWith('/admin'), 'admin volta ao painel ao abrir o site');
+      await r.context.close();
+
+      const draft = {
+        saved: Date.now(), step: 'detalhes', est: { establishment_type: 'restaurante', establishment_name: '', order_ref: '', paid_confirmed: false },
+        pickup: null, dropoff: null, otherWeight: false, d: { description: 'Livro guardado a meio' }, service: 'normal', when: 'agora', date: '2000-01-01',
+      };
+      r = await reopen({ 'levago.cliente.token': tokens.cliente, 'levago.ultima-pagina': '/cliente/nova', [`levago.cliente.rascunho.${cli.user.id}.envio`]: JSON.stringify(draft) });
+      const body = await r.page.locator('body').innerText();
+      const values = await r.page.locator('input, textarea').evaluateAll((els) => els.map((e) => e.value));
+      ok(new URL(r.page.url()).pathname === '/cliente/nova' && body.includes('Continuámos o pedido'), 'pedido a meio: volta ao pedido e avisa');
+      ok(values.includes('Livro guardado a meio'), 'pedido a meio: os dados escritos continuam lá');
+      await r.context.close();
+
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const page = await context.newPage();
+      await page.goto(SCREEN_ORIGIN + '/cliente/entrar', { waitUntil: 'networkidle' });
+      const box = page.getByLabel('Manter sessão iniciada');
+      ok((await box.count()) === 1 && (await box.isChecked()), 'Entrar mostra «Manter sessão iniciada», marcado por omissão');
+      await context.close();
+    }
+
     console.log('Ecrãs do Cliente');
     await screen('cliente', '/cliente', 'Início', 'Início');
     await screen('cliente', '/cliente/encomendas', 'Pedidos', 'Pedidos');

@@ -15,20 +15,55 @@ const tokenKey = (app: AppName) => `levago.${app}.token`;
 
 export function getToken(app: AppName): string | null {
   try {
-    return localStorage.getItem(tokenKey(app));
+    // «Manter sessão iniciada» guarda no aparelho; sem a opção, só até fechar o navegador.
+    return localStorage.getItem(tokenKey(app)) ?? sessionStorage.getItem(tokenKey(app));
   } catch {
     return null;
   }
 }
 
-export function setToken(app: AppName, token: string | null) {
+export function setToken(app: AppName, token: string | null, remember = true) {
   try {
-    if (token) localStorage.setItem(tokenKey(app), token);
-    else localStorage.removeItem(tokenKey(app));
+    localStorage.removeItem(tokenKey(app));
+    sessionStorage.removeItem(tokenKey(app));
+    if (token) (remember ? localStorage : sessionStorage).setItem(tokenKey(app), token);
+    if (!token) forgetPlace(app);
   } catch {
     /* armazenamento indisponível: a sessão dura só esta página */
   }
   window.dispatchEvent(new CustomEvent('levago:session', { detail: app }));
+}
+
+// ------------------------------------------------------------------ Última página
+// Quem sai da app sem querer volta à mesma página ao abrir o site outra vez.
+const PLACE_KEY = 'levago.ultima-pagina';
+const NOT_PLACES = /\/(entrar|registo|boas-vindas|recuperar)(\/|$)/;
+
+export function appOfPath(path: string): AppName | null {
+  const m = path.match(/^\/(cliente|estafeta|admin)(\/|$)/);
+  return (m?.[1] as AppName | undefined) ?? null;
+}
+
+export function rememberPlace(path: string) {
+  if (!appOfPath(path) || NOT_PLACES.test(path)) return;
+  try {
+    localStorage.setItem(PLACE_KEY, path);
+  } catch {
+    /* sem armazenamento */
+  }
+}
+
+export function lastPlace(): string | null {
+  try {
+    return localStorage.getItem(PLACE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function forgetPlace(app: AppName) {
+  const last = lastPlace();
+  if (last && appOfPath(last) === app) localStorage.removeItem(PLACE_KEY);
 }
 
 export function newIdempotencyKey() {

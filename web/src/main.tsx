@@ -1,8 +1,8 @@
 import { IN_APP } from './shared/inapp';
-import { Component, lazy, StrictMode, Suspense, type ComponentType, type ReactNode } from 'react';
+import { Component, lazy, StrictMode, Suspense, type ComponentType, type ReactNode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { getToken } from './shared/api';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { appOfPath, getToken, lastPlace, rememberPlace } from './shared/api';
 import { Loading } from './shared/ui';
 import './styles.css';
 
@@ -83,15 +83,30 @@ function Legal({ kind }: { kind: 'termos' | 'privacidade' }) {
   );
 }
 
-/** A primeira página é a página inicial (boas-vindas, com Criar conta e Entrar). Quem já tem sessão de cliente vai direto para o início. */
+/**
+ * A primeira página. Quem já tem sessão volta ao sítio onde estava (cliente, estafeta ou admin).
+ * Sem sessão, mostra a página inicial (boas-vindas, com Criar conta e Entrar).
+ */
 function Landing() {
-  return <Navigate to={getToken('cliente') ? '/cliente' : '/cliente/boas-vindas'} replace />;
+  const last = lastPlace();
+  const lastApp = last ? appOfPath(last) : null;
+  if (last && lastApp && getToken(lastApp)) return <Navigate to={last} replace />;
+  for (const app of ['cliente', 'estafeta', 'admin'] as const) if (getToken(app)) return <Navigate to={`/${app}`} replace />;
+  return <Navigate to="/cliente/boas-vindas" replace />;
+}
+
+/** Guarda a página actual, para voltar a ela depois de sair da app. */
+function PlaceTracker() {
+  const loc = useLocation();
+  useEffect(() => rememberPlace(loc.pathname + loc.search), [loc.pathname, loc.search]);
+  return null;
 }
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <Boundary>
     <BrowserRouter>
+      <PlaceTracker />
       <Suspense fallback={<Loading />}>
         <Routes>
           <Route path="/" element={<Landing />} />

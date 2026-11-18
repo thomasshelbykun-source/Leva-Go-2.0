@@ -4,11 +4,13 @@ import { randomToken, sha256 } from './crypto.js';
 import { canTransition, courierEarning, STATUS_LABELS, type Actor, type HoursRow, type OrderStatus, type Zone } from './domain.js';
 
 // ------------------------------------------------------------------ Sessões
-const SESSION_DAYS: Record<AppName, number> = { cliente: 60, estafeta: 30, admin: 1 };
+// Com «Manter sessão iniciada» (por omissão), a sessão dura estes dias. Sem a opção, dura 1 dia.
+const SESSION_DAYS: Record<AppName, number> = { cliente: 60, estafeta: 30, admin: 7 };
 
-export async function createSession(db: Db, userId: string, app: AppName) {
+export async function createSession(db: Db, userId: string, app: AppName, remember = true) {
   const token = randomToken();
-  const expires = new Date(Date.now() + SESSION_DAYS[app] * 86_400_000).toISOString();
+  const days = remember ? SESSION_DAYS[app] : 1;
+  const expires = new Date(Date.now() + days * 86_400_000).toISOString();
   await run(db, 'INSERT INTO sessions (id, user_id, token_hash, app, expires_at) VALUES (?,?,?,?,?)', uuid(), userId, await sha256(token), app, expires);
   return { token, expires_at: expires };
 }
