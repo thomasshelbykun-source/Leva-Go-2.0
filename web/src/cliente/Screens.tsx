@@ -1,4 +1,5 @@
 import { IN_APP } from '../shared/inapp';
+import { AppDownload } from '../shared/AppDownload';
 import { HeroSheet } from '../shared/Hero';
 import { Fragment, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -80,6 +81,7 @@ export function Welcome() {
             <Icon name="login" size={24} /> Entrar
           </Link>
         </div>
+        <AppDownload className="wl-dl" />
         <p className="wl-place">
           <Icon name="pin" size={20} /> Quelimane, Moçambique
         </p>

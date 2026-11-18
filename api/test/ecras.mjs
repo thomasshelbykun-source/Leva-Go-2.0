@@ -73,6 +73,10 @@ export async function testarEcras(ctx) {
       ok(page.url().endsWith('/cliente/boas-vindas'), 'abrir o site sem sessão vai para a página inicial');
       const body = await page.locator('body').innerText();
       ok(body.includes('Criar conta') && body.includes('Entrar'), 'página inicial mostra Criar conta e Entrar');
+      const dl = await page.getByRole('link', { name: 'Baixar a app Android' }).getAttribute('href');
+      ok(dl === 'https://github.com/thomasshelbykun-source/Leva-Go-2.0/releases/download/apk-latest/LevaGo.apk', 'página inicial tem o link para baixar o APK');
+      await page.goto(SCREEN_ORIGIN + '/estafeta/boas-vindas?app=android', { waitUntil: 'networkidle' });
+      ok((await page.getByRole('link', { name: 'Baixar a app Android' }).count()) === 0, 'dentro da app Android o link para baixar não aparece');
       await context.close();
     }
 
