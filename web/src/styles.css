@@ -763,13 +763,15 @@ ul.plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.35rem;
 }
 
 /* Nova encomenda */
-.page-cx { padding-top: 0; }
-.app-shell .page-cx .page-head { margin: 0 -1rem; padding: calc(env(safe-area-inset-top) + 0.7rem) 1rem 2.2rem; border-radius: 0; position: relative; }
-.app-shell .page-cx .page-head h1 { font-size: 1.35rem; font-weight: 600; letter-spacing: -0.01em; }
-.app-shell .page-cx .page-head .icon-btn { color: #fff; background: transparent; border: 0; font-size: 1.6rem; }
+/* Desenho aprovado: faixa azul fina em cima, folha branca arredondada com o título escuro e os passos por baixo. */
+.page-cx { padding-top: 0; --cx-sheet: var(--bg); background: linear-gradient(var(--navy) 0 calc(env(safe-area-inset-top) + 40px), var(--cx-sheet) 0) no-repeat; }
+:root:not([data-theme='dark']) .page-cx { --cx-sheet: #fbfcfe; }
+.app-shell .page-cx .page-head { position: relative; z-index: 2; margin: calc(env(safe-area-inset-top) + 14px) -1rem 0; padding: 0.75rem 1rem 0.2rem; min-height: 56px; border-radius: 26px 26px 0 0; background: var(--cx-sheet); color: var(--navy); }
+:root[data-theme='dark'] .app-shell .page-cx .page-head { color: var(--text); }
+.app-shell .page-cx .page-head h1 { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em; }
+.app-shell .page-cx .page-head .icon-btn { color: inherit; background: transparent; border: 0; font-size: 1.6rem; width: 44px; height: 44px; }
 .page-cx .page-actions:empty { width: 44px; }
-.cx-steps { list-style: none; margin: -2.4rem -1rem 0; padding: 1.1rem 0.6rem 0.4rem; background: var(--bg); border-radius: 26px 26px 0 0; display: flex; position: relative; z-index: 1; }
-:root:not([data-theme='dark']) .cx-steps, :root:not([data-theme='dark']) .page-cx { background: #fbfcfe; }
+.cx-steps { list-style: none; margin: -0.4rem -1rem 0; padding: 0.4rem 0.4rem 0.2rem; background: var(--cx-sheet); display: flex; }
 .cx-steps li { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; position: relative; font-size: 0.82rem; color: var(--text); }
 .cx-steps li + li::before { content: ''; position: absolute; top: 17px; right: calc(50% + 20px); left: calc(-50% + 20px); height: 1px; background: #d5dce6; }
 .cx-steps li.done + li::before, .cx-steps li.done::before { background: var(--orange); }
@@ -830,11 +832,18 @@ ul.plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.35rem;
 .cx-top .logo-row { margin-left: -0.35rem; }
 .cx { padding-bottom: 0; }
 .cx-sheet { padding-bottom: calc(86px + env(safe-area-inset-bottom)); min-height: calc(100dvh - 110px); }
-.app-shell .page-cx .page-head { padding-bottom: 3rem; }
 .ad-input input, .ad-input input::placeholder { font-weight: 400; }
+.page-cx input::placeholder, .page-cx textarea::placeholder { font-style: normal; font-weight: 400; color: #8a94a3; }
+.cx-continue-block { position: static; margin-top: 0.4rem; min-height: 54px; font-size: 1.15rem; border-radius: 16px; }
+.page-cx .radio { font-size: 0.88rem; align-items: flex-start; }
+.page-cx .radio input[type='checkbox'] { flex: none; width: 20px; height: 20px; margin: 0.1rem 0 0; accent-color: var(--orange); }
+.page-cx { min-height: 100dvh; }
+.cx-option-on small { color: rgb(255 255 255 / 88%); opacity: 1; }
+.page-cx .cx-when { grid-template-columns: 1fr 1fr; }
+.page-cx .cx-when .cx-option { min-width: 0; }
 
 /* Nova encomenda: passos Encomenda, Serviço e Pagamento (desenho aprovado, 11/2026). */
-.cx-continue-inline { position: static; margin-top: 0; width: auto; flex: 1; min-height: 52px; font-size: 1.1rem; }
+.cx-continue-inline { position: static; margin-top: 0; width: auto; flex: 1; min-height: 52px; font-size: 1.1rem; border-radius: 16px; }
 .page-cx .row-between > .btn-ghost { flex: 0 0 38%; min-height: 52px; border-radius: 16px; background: #e9ecf1; color: var(--navy); font-weight: 700; }
 :root[data-theme='dark'] .page-cx .row-between > .btn-ghost { background: var(--surface-2); color: var(--text); }
 .page-cx .field { display: flex; flex-direction: column; gap: 0.45rem; }

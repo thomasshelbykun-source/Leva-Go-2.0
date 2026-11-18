@@ -3,14 +3,14 @@ import { NavLink, Navigate, Outlet, Route, Routes, useLocation } from 'react-rou
 import { Avatar, Icon, Logo, type IconName } from '../shared/brand';
 import { ResetPassword } from '../shared/Auth';
 import { RequireAuth, SessionProvider, useSession } from '../shared/session';
-import { Pricing, Payments, Reports, Settings, Subscriptions, TicketDetail, Tickets, Zones } from './Business';
+import { Bairros, Pricing, Payments, Reports, Settings, Subscriptions, TicketDetail, Tickets, Zones } from './Business';
 import { IncidentDossier, SecurityCenter } from './Security';
 import { AdminOrderDetail, AdminOrders, CourierDetail, Couriers, CustomerDetail, Customers, Dashboard } from './Operations';
 
 const BASE = '/admin';
 const MENU: [string, IconName, string][] = [
   ['', 'dashboard', 'Dashboard'], ['clientes', 'users', 'Clientes'], ['estafetas', 'scooter', 'Estafetas'], ['encomendas', 'box', 'Encomendas'],
-  ['subscricoes', 'shield', 'Subscrições'], ['pagamentos', 'card', 'Pagamentos'], ['tarifas', 'tag', 'Tarifas'], ['zonas', 'map', 'Zonas e cobertura'],
+  ['subscricoes', 'shield', 'Subscrições'], ['pagamentos', 'card', 'Pagamentos'], ['tarifas', 'tag', 'Tarifas'], ['zonas', 'map', 'Zonas e cobertura'], ['bairros', 'pin', 'Bairros'],
   ['seguranca', 'shield', 'Segurança e ocorrências'], ['suporte', 'chat', 'Apoio'], ['relatorios', 'chart', 'Relatórios'], ['definicoes', 'gear', 'Configurações'],
 ];
 
@@ -106,6 +106,7 @@ export default function AdminApp() {
           <Route path="pagamentos" element={<Payments />} />
           <Route path="tarifas" element={<Pricing />} />
           <Route path="zonas" element={<Zones />} />
+          <Route path="bairros" element={<Bairros />} />
           <Route path="seguranca" element={<SecurityCenter />} />
           <Route path="seguranca/:id" element={<IncidentDossier />} />
           <Route path="suporte" element={<Tickets />} />
