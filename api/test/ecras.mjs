@@ -146,6 +146,9 @@ export async function testarEcras(ctx) {
     console.log('Nova encomenda por bairros (Locais, Encomenda, Serviço, Pagamento)');
     {
       const { page, errors, context } = await open('cliente', '/cliente/nova');
+      // E2E_SHOTS=<pasta> guarda uma foto de cada passo, para comparar com o desenho.
+      const shot = async (n) => process.env.E2E_SHOTS && page.screenshot({ path: join(process.env.E2E_SHOTS, `nova-${n}.png`), fullPage: true });
+      await shot('1-locais');
       const fields = page.getByPlaceholder('Escreve o nome do bairro');
       await fields.nth(0).fill('icid');
       ok(await page.getByRole('button', { name: 'Icídua' }).isVisible(), 'Locais: escrever parte do nome sem acento sugere «Icídua»');
@@ -155,6 +158,7 @@ export async function testarEcras(ctx) {
       await fields.nth(1).fill('Coalane');
       await page.getByRole('button', { name: /Continuar/ }).first().click();
       ok(await page.getByText('Dados da encomenda').isVisible(), 'Encomenda: passo 2 abre depois dos bairros');
+      await shot('2-encomenda');
       const cont2 = page.getByRole('button', { name: 'Continuar' });
       ok(await cont2.isDisabled(), 'Encomenda: Continuar fica bloqueado sem os dados');
       await page.getByText('≤ 1 kg').click();
@@ -165,8 +169,10 @@ export async function testarEcras(ctx) {
       await cont2.click();
       ok(await page.getByText('Quando desejas a entrega?').isVisible() && await page.getByText('Tipo de entrega').isVisible(), 'Serviço: mostra quando e tipo de entrega');
       ok(await page.getByText('A previsão inclui a atribuição do estafeta').isVisible(), 'Serviço: mostra a nota da previsão');
+      await shot('3-servico');
       await page.getByRole('button', { name: 'Continuar' }).click();
       await page.getByText('Resumo').waitFor({ timeout: 15000 });
+      await shot('4-pagamento');
       const body = await page.locator('body').innerText();
       ok(body.includes('Icídua') && body.includes('Coalane'), 'Pagamento: resumo mostra os dois bairros');
       const confirmBtn = page.getByRole('button', { name: /Confirmar/ });
@@ -193,6 +199,22 @@ export async function testarEcras(ctx) {
 
     console.log('Ecrãs do Admin');
     await screen('admin', '/admin', 'Painel', 'Painel');
+    await screen('admin', '/admin/bairros', ['Bairros', 'Adicionar bairro', 'Icídua'], 'Bairros');
+    {
+      const { page, errors, context } = await open('admin', '/admin/bairros');
+      await page.getByRole('button', { name: '+ Adicionar bairro' }).click();
+      await page.getByLabel('Nome do bairro').fill('Saguar Teste');
+      await page.locator('.leaflet-container').click({ position: { x: 120, y: 140 } });
+      ok((await page.getByLabel('Latitude').inputValue()) !== '', 'Bairros: tocar no mapa preenche o ponto central');
+      await page.getByRole('button', { name: 'Guardar e adicionar outro' }).click();
+      await page.getByText('«Saguar Teste» guardado.').waitFor({ timeout: 10000 });
+      ok((await page.getByLabel('Nome do bairro').inputValue()) === '', 'Bairros: depois de guardar, o formulário fica pronto para o próximo bairro');
+      if (process.env.E2E_SHOTS) await page.screenshot({ path: join(process.env.E2E_SHOTS, 'admin-bairros.png'), fullPage: true });
+      const bairros = await (await fetch(`${apiOrigin}/v1/bairros`, { headers: { authorization: `Bearer ${tokens.cliente}` } })).json().catch(() => null);
+      ok(JSON.stringify(bairros ?? '').includes('Saguar Teste'), 'Bairros: o bairro novo aparece logo ao cliente');
+      ok(errors.length === 0, 'Bairros: sem erros no ecrã');
+      await context.close();
+    }
     await screen('admin', '/admin/encomendas', 'Encomendas', 'Encomendas');
     await screen('admin', `/admin/encomendas/${orderId}`, 'Entregue', 'Detalhe da encomenda');
     await screen('admin', '/admin/clientes', 'Carla', 'Clientes');
@@ -202,7 +224,7 @@ export async function testarEcras(ctx) {
     await screen('admin', '/admin/subscricoes', 'Planos', 'Subscrições');
     await screen('admin', '/admin/pagamentos', 'Pagamentos', 'Pagamentos');
     await screen('admin', '/admin/tarifas', 'Tarifas', 'Tarifas');
-    await screen('admin', '/admin/zonas', ['Bairros', 'Coalane'], 'Zonas e bairros');
+    await screen('admin', '/admin/zonas', ['Zonas e cobertura', 'Bairros'], 'Zonas e cobertura');
     await screen('admin', '/admin/seguranca', 'Segurança', 'Centro de segurança');
     await screen('admin', '/admin/suporte', 'Apoio', 'Apoio (tickets)');
     await screen('admin', `/admin/suporte/${ticketId}`, 'Dúvida sobre pagamento', 'Detalhe do ticket');

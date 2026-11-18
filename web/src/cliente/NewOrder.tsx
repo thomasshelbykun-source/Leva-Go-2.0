@@ -195,14 +195,15 @@ export function NewOrder() {
       ] as const)
     : [];
 
+  const stepIndex = STEPS.findIndex((s) => s[0] === step);
   const phoneOk = isMzPhone(d.recipient_phone);
   const detailsOk = d.declaration && weight > 0 && weight <= maxKg && d.description.trim().length >= 3 && d.recipient_name.trim().length >= 2 && phoneOk;
 
   return (
-    <Page title={recolha ? 'Pedir recolha' : 'Nova encomenda'} back="/cliente" className="page-cx">
+    <Page title={recolha ? 'Pedir recolha' : 'Nova encomenda'} back="/cliente" onBack={stepIndex > 0 ? () => setStep(STEPS[stepIndex - 1][0]) : undefined} className="page-cx">
       <ol className="cx-steps">
         {STEPS.map(([k, l], i) => (
-          <li key={k} className={k === step ? 'current' : STEPS.findIndex((s) => s[0] === step) > i ? 'done' : ''}>
+          <li key={k} className={k === step ? 'current' : stepIndex > i ? 'done' : ''}>
             <span className="cx-step-n">{i + 1}</span>
             <span className="cx-step-l">{l}</span>
           </li>
@@ -335,14 +336,9 @@ export function NewOrder() {
           <label className="radio">
             <input type="checkbox" checked={d.declaration} onChange={(e) => setD({ ...d, declaration: e.target.checked })} /> Declaro que o conteúdo é permitido e vai bem embalado (sem dinheiro, armas, drogas, animais ou produtos perigosos).
           </label>
-          <div className="row-between">
-            <Button kind="ghost" onClick={() => setStep('locais')}>
-              Voltar
-            </Button>
-            <button type="button" className="cx-continue cx-continue-inline" disabled={!detailsOk} onClick={() => setStep('tipo')}>
-              Continuar
-            </button>
-          </div>
+          <button type="button" className="cx-continue cx-continue-block" disabled={!detailsOk} onClick={() => setStep('tipo')}>
+            Continuar
+          </button>
         </div>
       )}
 
