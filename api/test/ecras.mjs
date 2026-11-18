@@ -111,6 +111,9 @@ export async function testarEcras(ctx) {
       ok(new URL(r.page.url()).pathname === '/cliente/nova' && body.includes('Continuámos o pedido'), 'pedido a meio: volta ao pedido e avisa');
       ok(values.includes('Livro guardado a meio'), 'pedido a meio: os dados escritos continuam lá');
       await r.context.close();
+      r = await reopen({ 'levago.cliente.token': tokens.cliente, 'levago.ultima-pagina': '/cliente/nova', [`levago.cliente.rascunho.${cli.user.id}.envio`]: JSON.stringify({ ...draft, saved: Date.now() - 4 * 3_600_000 }) });
+      ok(!(await r.page.locator('body').innerText()).includes('Continuámos o pedido'), 'pedido a meio com mais de 3 horas já não volta');
+      await r.context.close();
 
       const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
       const page = await context.newPage();

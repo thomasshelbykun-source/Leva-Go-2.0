@@ -36,8 +36,8 @@ const PAY_HINT: Record<string, string> = {
 };
 const ESTAB: [string, string][] = [['restaurante', 'Restaurante'], ['farmacia', 'Farmácia'], ['loja', 'Loja / Mercado'], ['outro', 'Outro']];
 
-// Pedido a meio: fica guardado no aparelho durante 24 h, para continuar depois de sair da app.
-const DRAFT_HOURS = 24;
+// Pedido a meio: fica guardado no aparelho durante 3 h, para continuar depois de sair da app.
+const DRAFT_HOURS = 3;
 interface Draft {
   saved: number;
   step: Step;
