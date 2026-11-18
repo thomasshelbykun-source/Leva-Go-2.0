@@ -65,6 +65,17 @@ export async function testarEcras(ctx) {
   }
 
   try {
+    console.log('Página inicial (sem sessão)');
+    {
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const page = await context.newPage();
+      await page.goto(SCREEN_ORIGIN + '/', { waitUntil: 'networkidle' });
+      ok(page.url().endsWith('/cliente/boas-vindas'), 'abrir o site sem sessão vai para a página inicial');
+      const body = await page.locator('body').innerText();
+      ok(body.includes('Criar conta') && body.includes('Entrar'), 'página inicial mostra Criar conta e Entrar');
+      await context.close();
+    }
+
     console.log('Ecrãs do Cliente');
     await screen('cliente', '/cliente', 'Início', 'Início');
     await screen('cliente', '/cliente/encomendas', 'Pedidos', 'Pedidos');

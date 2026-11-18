@@ -8,6 +8,7 @@ import pg from 'pg';
 import { unlinkSync, writeFileSync } from 'node:fs';
 import { testarFuncoes } from './funcoes.mjs';
 import { SCREEN_ORIGIN, testarEcras } from './ecras.mjs';
+import { startNeonShim } from './neon-http-shim.mjs';
 
 const PORT = 8799;
 const BASE = `http://127.0.0.1:${PORT}/v1`;
@@ -59,7 +60,13 @@ async function main() {
   await adminSql(ADMIN_URL, `CREATE DATABASE ${DB_NAME}`);
   execFileSync('npx', ['tsx', 'scripts/migrate.ts', '--seed'], { stdio: 'pipe', env: { ...process.env, DATABASE_URL: dbUrl } });
 
-  const vars = { DATABASE_URL: dbUrl, ENVIRONMENT: 'test', PAYMENTS_WEBHOOK_SECRET: 'segredo-teste', CORS_ORIGINS: `http://localhost:5173,${SCREEN_ORIGIN}` };
+  // E2E_DB_DRIVER=http: a API fala com a base de dados por HTTP, como na Cloudflare com o Neon
+  // (aqui através de uma imitação local do endpoint /sql do Neon).
+  const httpDriver = process.env.E2E_DB_DRIVER === 'http';
+  const shim = httpDriver ? await startNeonShim(dbUrl) : null;
+  if (httpDriver) process.on('exit', () => shim?.close());
+  const httpVars = httpDriver ? { DB_DRIVER: 'http', NEON_FETCH_ENDPOINT: 'http://127.0.0.1:8797/sql' } : {};
+  const vars = { ...httpVars, DATABASE_URL: dbUrl, ENVIRONMENT: 'test', PAYMENTS_WEBHOOK_SECRET: 'segredo-teste', CORS_ORIGINS: `http://localhost:5173,${SCREEN_ORIGIN}` };
   // E2E_RUNTIME=workers corre a API no runtime da Cloudflare (wrangler dev), como em produção.
   const workers = process.env.E2E_RUNTIME === 'workers';
   const envFile = `.e2e-${DB_NAME}.env`;

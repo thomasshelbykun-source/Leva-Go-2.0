@@ -83,9 +83,9 @@ function Legal({ kind }: { kind: 'termos' | 'privacidade' }) {
   );
 }
 
-/** A primeira página é Criar conta. Quem já tem sessão de cliente vai direto para o início. */
+/** A primeira página é a página inicial (boas-vindas, com Criar conta e Entrar). Quem já tem sessão de cliente vai direto para o início. */
 function Landing() {
-  return <Navigate to={getToken('cliente') ? '/cliente' : '/cliente/registo'} replace />;
+  return <Navigate to={getToken('cliente') ? '/cliente' : '/cliente/boas-vindas'} replace />;
 }
 
 createRoot(document.getElementById('root')!).render(

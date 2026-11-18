@@ -14,16 +14,18 @@ export async function createSession(db: Db, userId: string, app: AppName) {
 }
 
 export async function loadSession(db: Db, token: string): Promise<AuthUser | null> {
-  const row = await one<{ sid: string; app: AppName; id: string; name: string; phone: string; status: string }>(
+  // Uma só consulta (sessão, conta e papéis): cada ida à base de dados conta na velocidade.
+  const row = await one<{ sid: string; app: AppName; id: string; name: string; phone: string; status: string; roles: Role[] | null }>(
     db,
-    `SELECT s.id AS sid, s.app, u.id, u.name, u.phone, u.status
+    `SELECT s.id AS sid, s.app, u.id, u.name, u.phone, u.status,
+            (SELECT array_agg(r.role) FROM user_roles r WHERE r.user_id = u.id) AS roles
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?`,
     await sha256(token),
     nowIso(),
   );
   if (!row || row.status !== 'active') return null;
-  const roles = (await all<{ role: Role }>(db, 'SELECT role FROM user_roles WHERE user_id = ?', row.id)).map((r) => r.role);
+  const roles = (row.roles ?? []) as Role[];
   return { id: row.id, name: row.name, phone: row.phone, roles, app: row.app, sessionId: row.sid };
 }
 
